@@ -46,15 +46,15 @@ std::vector<std::complex<float>> resampleCaGoldCodeTOneMilisecondOfBasebandCUDA(
     const std::vector<int>& goldCode, float frequencyHz ) {
 
 
-    static float baseBandI[10230];
-    static float baseBandQ[10230];
-    static float fGoldCode[1023];
+    float baseBandI[10230];
+    float baseBandQ[10230];
+    float fGoldCode[1023];
 
     float *cuda_fGoldCode;
     float *cuda_baseBandI;
     float *cuda_baseBandQ;
 
-    std::vector<std::complex<float>> baseband(10240);
+    std::vector<std::complex<float>> baseband(10230);
     size_t n = baseband.size();
 
     for (size_t i = 0; i < 1023; ++i) {

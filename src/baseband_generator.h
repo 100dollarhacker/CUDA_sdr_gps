@@ -20,8 +20,10 @@ public:
         // Cross-correlation: sum of products at each lag
         std::complex<float> sum = std::complex<float>(0.0f, 0.0f);
         for (size_t i = 0; i < n; ++i) {
+        // for (size_t i = 0; i < 100; ++i) {
             // printf("sum before:%f + %fi\n",sum.real(), sum.imag());
             sum += signal1[i] * signal2[(i + lag)%n];
+            // printf("sum after adding i=%zu:%f + %fi\n",i, sum.real(), sum.imag());
         }
 
         return std::abs(sum);

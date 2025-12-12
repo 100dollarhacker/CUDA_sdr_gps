@@ -12,33 +12,123 @@
 
 
 
+__global__ void gpu_correlate(float* cuda_signalI1, float* cuda_signalQ1, float* cuda_signalI2, float* cuda_signalQ2, int lag)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    __shared__ float shared_dataI[256];
+    __shared__ float shared_dataQ[256];
+
+    float real1 = cuda_signalI1[i] * cuda_signalI2[(i + lag)%10230] - cuda_signalQ1[i] * cuda_signalQ2[(i + lag)%10230];
+    float imag1 = cuda_signalI1[i] * cuda_signalQ2[(i + lag)%10230] + cuda_signalQ1[i] * cuda_signalI2[(i + lag)%10230];
+
+    shared_dataI[threadIdx.x] = real1;
+    shared_dataQ[threadIdx.x] = imag1;
+
+    __syncthreads();
+
+    // Reduction within the block
+    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
+        if (threadIdx.x < stride) {
+            shared_dataI[threadIdx.x] += shared_dataI[threadIdx.x + stride];
+            shared_dataQ[threadIdx.x] += shared_dataQ[threadIdx.x + stride];
+        }
+        __syncthreads();
+    }
+
+    if (threadIdx.x == 0)
+    {
+        cuda_signalI1[blockIdx.x] = shared_dataI[0];
+        cuda_signalQ1[blockIdx.x] = shared_dataQ[0];
+    }
+
+
+}
+
+
+float crossCorrelationCUDA(
+    const std::vector<std::complex<float>>& signal1,
+    const std::vector<std::complex<float>>& signal2,
+    int lag) {
+
+
+
+    float signalI1[10230];
+    float signalQ1[10230];
+    float signalI2[10230];
+    float signalQ2[10230];
+
+    for (size_t i = 0; i < 10230; ++i) {
+        signalI1[i] = signal1[i].real();
+        signalQ1[i] = signal1[i].imag();
+        signalI2[i] = signal2[i].real();
+        signalQ2[i] = signal2[i].imag();
+    }
+
+
+
+    float *cuda_signalI1;
+    float *cuda_signalQ1;
+    float *cuda_signalI2;
+    float *cuda_signalQ2;
+
+
+    cudaMalloc(&cuda_signalI1, 10240 * sizeof(float));
+    cudaMalloc(&cuda_signalQ1, 10240 * sizeof(float));
+    cudaMalloc(&cuda_signalI2, 10240 * sizeof(float));
+    cudaMalloc(&cuda_signalQ2, 10240 * sizeof(float));
+
+    cudaMemset(cuda_signalI1, 0, 10240 * sizeof(float));
+    cudaMemset(cuda_signalQ1, 0, 10240 * sizeof(float));
+    cudaMemset(cuda_signalI2, 0, 10240 * sizeof(float));
+    cudaMemset(cuda_signalQ2, 0, 10240 * sizeof(float));
+
+
+    cudaMemcpy(cuda_signalI1, signalI1, 10230 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(cuda_signalQ1, signalQ1, 10230 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(cuda_signalI2, signalI2, 10230 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(cuda_signalQ2, signalQ2, 10230 * sizeof(float), cudaMemcpyHostToDevice);
+
+
+    gpu_correlate<<<(10230/256)+1, 256>>>(cuda_signalI1, cuda_signalQ1, cuda_signalI2, cuda_signalQ2, lag);
+
+    cudaMemcpy(signalI1, cuda_signalI1, 10230 * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(signalQ1, cuda_signalQ1, 10230 * sizeof(float), cudaMemcpyDeviceToHost);
+
+    std::complex<float> sum = std::complex<float>(0.0f, 0.0f);
+    for (size_t i = 0; i < 10230/256; i++) {
+        sum += std::complex<float>(signalI1[i], signalQ1[i]);
+    }
+    float realSum = std::abs(sum);
+
+
+    cudaFree(cuda_signalI1);
+    cudaFree(cuda_signalQ1);
+    cudaFree(cuda_signalI2);
+    cudaFree(cuda_signalQ2);
+
+    return realSum;
+
+}
+
+
+
+
 // CUDA Kernel function that runs on the GPU
 // __global__ specifies that this function is a kernel and can be called from the CPU
-__global__ void gpu_resample(float *cuda_fGoldCode, float *cuda_baseBandI, float *cuda_baseBandQ, float frequencyHz) {
+__global__ void gpu_resample(float *cuda_fGoldCode, float *cuda_baseBandI, float *cuda_baseBandQ, float frequencyHz)
+{
 
 
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    // for (size_t i = 0; i < n; ++i)
-    {
-        float inPhase = cuda_fGoldCode[(i/10)%1023] == 1 ? 1 : -1;
-        cuda_baseBandI[i] = inPhase;
-        cuda_baseBandQ[i] = 0.0f;
-    }
+    float inPhase = cuda_fGoldCode[(i/10)%1023] == 1 ? 1 : -1;
+    cuda_baseBandI[i] = inPhase;
+    cuda_baseBandQ[i] = 0.0f;
 
+    float carrier_phase = 2.0f * M_PI * frequencyHz * ((float)i/10230000);//(i / 10000.0f);
+    cuda_baseBandQ[i] = cuda_baseBandI[i] * sin(carrier_phase);
+    cuda_baseBandI[i] *= cos(carrier_phase);
 
-    // Modulate with complex exponential carrier
-    // for (size_t i = 0; i < n; ++i)
-    {
-
-        //500 * 2.0f * M_PI * (i / 10000.0f);
-        // 500 Hz carrier frequency over 1 ms at 10 MHz sample rate
-        float carrier_phase = 2.0f * M_PI * frequencyHz * ((float)i/10230000);//(i / 10000.0f);
-        cuda_baseBandQ[i] = cuda_baseBandI[i] * sin(carrier_phase);
-        cuda_baseBandI[i] *= cos(carrier_phase);
-    }
-
-    // cuda_baseBandI[i] +=1.0f;  // Shift Q to make signal non-negative
-    // cuda_baseBandQ[i] +=1.0f;  // Shift Q to make signal non-negative
 }
 
 // Convert gold codes to baseband (complex-valued signal)

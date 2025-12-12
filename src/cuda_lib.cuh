@@ -12,3 +12,7 @@ int coresPerSM(int major, int minor) ;
 void print_cuda_props() ;
 
 std::vector<std::complex<float>> resampleCaGoldCodeTOneMilisecondOfBasebandCUDA(const std::vector<int>& goldCode, float frequencyHz = 0);
+
+float crossCorrelationCUDA(const std::vector<std::complex<float>>& signal1,
+                           const std::vector<std::complex<float>>& signal2,
+                           int lag);

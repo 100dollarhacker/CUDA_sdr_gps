@@ -373,6 +373,79 @@ TEST(CudaGoldCodeTest, autocorelation)
     ASSERT_LE(10220, cross);
 }
 
+TEST(CudaGoldCodeTest, autocorelation_with_frequency_shift)
+{
+
+    vector<int> output1(1023), output2(1023);
+    CA_generator ca;
+    ca.get_gold_code_sequence(1, output1);
+    ca.get_gold_code_sequence(1, output2);
+
+    BasebandGenerator bg;
+    auto baseband_signal1 = resampleCaGoldCodeTOneMilisecondOfBasebandCUDA(output1, 250);
+    auto baseband_signal2 = resampleCaGoldCodeTOneMilisecondOfBasebandCUDA(output2, 250);
+
+
+     for (size_t i = 0; i < 10; i++) { //baseband_signal1.size(); i++) {
+        EXPECT_NEAR(baseband_signal2[i].real(), baseband_signal1[i].real(), 1e-5);
+        EXPECT_NEAR(baseband_signal2[i].imag(), baseband_signal1[i].imag(), 1e-5);
+        // std::cout << "Baseband1[" << i << "]: " << baseband_signal1[i] << " Baseband2[" << i << "]: " << baseband_signal2[i] << std::endl;
+    }
+    auto cross = (int)bg.crossCorrelation(baseband_signal1, baseband_signal2, 0);
+
+    ASSERT_LE(10220/2, cross);
+}
+
+
+
+TEST(CudaGoldCodeTest, autocorelation_with_freq_in_CUDA)
+{
+
+    vector<int> output1(1023), output2(1023);
+    CA_generator ca;
+    ca.get_gold_code_sequence(1, output1);
+    ca.get_gold_code_sequence(1, output2);
+
+    BasebandGenerator bg;
+    auto baseband_signal1 = resampleCaGoldCodeTOneMilisecondOfBasebandCUDA(output1, 250);
+    auto baseband_signal2 = resampleCaGoldCodeTOneMilisecondOfBasebandCUDA(output2, 250);
+
+
+     for (size_t i = 0; i < 10; i++) { //baseband_signal1.size(); i++) {
+        EXPECT_NEAR(baseband_signal2[i].real(), baseband_signal1[i].real(), 1e-5);
+        EXPECT_NEAR(baseband_signal2[i].imag(), baseband_signal1[i].imag(), 1e-5);
+        // std::cout << "Baseband1[" << i << "]: " << baseband_signal1[i] << " Baseband2[" << i << "]: " << baseband_signal2[i] << std::endl;
+    }
+    auto cross = (int)bg.crossCorrelation(baseband_signal1, baseband_signal2, 0);
+    auto cross_CUDA = (int)crossCorrelationCUDA(baseband_signal1, baseband_signal2, 0);
+
+    EXPECT_NEAR(cross_CUDA, cross, 30);
+}
+
+TEST(CudaGoldCodeTest, autocorelation_with_freq_in_CUDA_and_lag)
+{
+
+    vector<int> output1(1023), output2(1023);
+    CA_generator ca;
+    ca.get_gold_code_sequence(1, output1);
+    ca.get_gold_code_sequence(1, output2);
+
+    BasebandGenerator bg;
+    auto baseband_signal1 = resampleCaGoldCodeTOneMilisecondOfBasebandCUDA(output1, 250);
+    auto baseband_signal2 = resampleCaGoldCodeTOneMilisecondOfBasebandCUDA(output2, 250);
+
+
+     for (size_t i = 0; i < 10; i++) { //baseband_signal1.size(); i++) {
+        EXPECT_NEAR(baseband_signal2[i].real(), baseband_signal1[i].real(), 1e-5);
+        EXPECT_NEAR(baseband_signal2[i].imag(), baseband_signal1[i].imag(), 1e-5);
+        // std::cout << "Baseband1[" << i << "]: " << baseband_signal1[i] << " Baseband2[" << i << "]: " << baseband_signal2[i] << std::endl;
+    }
+    auto cross = (int)bg.crossCorrelation(baseband_signal1, baseband_signal2, 10);
+    auto cross_CUDA = (int)crossCorrelationCUDA(baseband_signal1, baseband_signal2, 10);
+
+    EXPECT_NEAR(cross_CUDA, cross, 30);
+}
+
 
 // Main function to run all tests
 int main(int argc, char **argv)

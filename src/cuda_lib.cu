@@ -10,6 +10,149 @@
 #include <cuda/std/chrono>
 #include <iostream>
 
+/*
+If CUDA kernel does not launch, or if there is a launch failure, try:
+  sudo rmmod nvidia_uvm
+  sudo modprobe nvidia_uvm
+*/
+
+
+const int  OUTPUT_SIZE = 2*(10240/256);
+
+
+
+// __global__ void gpu_freq_shift_correlate(float* cuda_signalI1, float* cuda_signalQ1, float* cuda_signalI2, float* cuda_signalQ2, float freqShiftHz,int lag)
+__global__ void gpu_freq_shift_correlate(float* cuda_signalI1, float* cuda_signalQ1, float* cuda_fGoldCode, float freqShiftHz,int lag, float *cuda_output)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    __shared__ float shared_dataI[256];
+    __shared__ float shared_dataQ[256];
+
+
+    float gold_code = cuda_fGoldCode[((i+ lag)/10)%1023] == 1 ? 1 : -1;
+
+
+    float real1 =  gold_code * cosf(2.0f * M_PI * freqShiftHz * ((float)i/10230000));
+    float imag1 = real1 * sinf(2.0f * M_PI * freqShiftHz * ((float)i/10230000));
+
+    real1 = cuda_signalI1[i] * real1 - cuda_signalQ1[i] * imag1;
+    imag1 = cuda_signalQ1[i] * real1 + cuda_signalI1[i] * imag1;
+
+    shared_dataI[threadIdx.x] = real1;
+    shared_dataQ[threadIdx.x] = imag1;
+
+    __syncthreads();
+
+    // Reduction within the block
+    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
+        if (threadIdx.x < stride) {
+            shared_dataI[threadIdx.x] += shared_dataI[threadIdx.x + stride];
+            shared_dataQ[threadIdx.x] += shared_dataQ[threadIdx.x + stride];
+        }
+        __syncthreads();
+    }
+
+    if (threadIdx.x == 0)
+    {
+
+        cuda_output[blockIdx.x*2] = shared_dataI[0];
+        cuda_output[blockIdx.x*2+1] = shared_dataQ[0];
+
+    }
+
+
+}
+
+// Convert gold codes to baseband (complex-valued signal)
+int freq_shift_correlateCUDA(const std::vector<int>& goldCode, float freqShiftHz , const std::vector<std::complex<float>>& inputSignal, int lag) {
+
+
+    float fGoldCode[1023];
+    float output[OUTPUT_SIZE];
+
+    float *cuda_fGoldCode;
+
+    for (size_t i = 0; i < 1023; ++i) {
+        fGoldCode[i] = static_cast<float>(goldCode[i]);
+    }
+
+
+    cudaMalloc(&cuda_fGoldCode, 1023 * sizeof(float));
+    cudaMemcpy(cuda_fGoldCode, fGoldCode, 1023 * sizeof(float), cudaMemcpyHostToDevice);
+
+
+    float signalI1[10230];
+    float signalQ1[10230];
+
+    for (size_t i = 0; i < 10230; ++i) {
+        signalI1[i] = inputSignal[i].real();
+        signalQ1[i] = inputSignal[i].imag();
+    }
+
+
+
+    float *cuda_signalI1;
+    float *cuda_signalQ1;
+    float *cuda_output;
+
+    cudaMalloc(&cuda_signalI1, 10240 * sizeof(float));
+    cudaMalloc(&cuda_signalI1, 10240 * sizeof(float));
+    cudaMalloc(&cuda_signalQ1, 10240 * sizeof(float));
+    cudaMalloc(&cuda_output, OUTPUT_SIZE * sizeof(float));
+
+    cudaMemset(cuda_signalI1, 0, 10240 * sizeof(float));
+    cudaMemset(cuda_signalQ1, 0, 10240 * sizeof(float));
+
+
+    cudaMemcpy(cuda_signalI1, signalI1, 10230 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(cuda_signalQ1, signalQ1, 10230 * sizeof(float), cudaMemcpyHostToDevice);
+
+    float max_cross = 0 ;
+    float max_freq = 0 ;
+    int max_lag = 0 ;
+    for (lag = 0; lag < 10230; lag += 3) {
+
+        for (freqShiftHz = -5000; freqShiftHz <= 5000; freqShiftHz += 250) {
+
+            gpu_freq_shift_correlate<<<(10230/256)+1, 256>>>(cuda_signalI1, cuda_signalQ1, cuda_fGoldCode,  freqShiftHz, lag, cuda_output);
+
+            cudaError_t err = cudaGetLastError();
+            if (err != cudaSuccess) {
+                printf("CUDA Error: %s\n", cudaGetErrorString(err));
+                exit(1); // If CUDA fails, there is nothing we can do
+            }
+
+
+            cudaMemcpy(output, cuda_output, OUTPUT_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
+
+            std::complex<float> sum = std::complex<float>(0.0f, 0.0f);
+            for (size_t i = 0; i < 10240/256; i++) {
+                sum += std::complex<float>(output[2*i], output[2*i+1]);
+            }
+            float realSum = std::abs(sum);
+
+            if (realSum > max_cross) {
+                max_cross = realSum;
+                max_freq = freqShiftHz;
+                max_lag = lag;
+                // printf( "Sat #%d freqShiftHz:%f Lag:%d Cross:%d\n", i, freqShiftHz, lag, cross_cuda);
+            }
+            // printf( "Lag: %d  FreqShiftHz:%f Cross:(%f,%f)\n", lag, freqShiftHz, sum.imag(), sum.real());
+            // printf("%f,", realSum);
+        }
+        // printf("\n");/
+    }
+    printf("max cross:%f max freq:%f max lag:%d\n", max_cross, max_freq, max_lag);
+    cudaFree(cuda_output);
+    cudaFree(cuda_signalI1);
+    cudaFree(cuda_signalQ1);
+    cudaFree(cuda_fGoldCode);
+
+    return 0;// (int)realSum;
+
+
+}
 
 
 __global__ void gpu_correlate(float* cuda_signalI1, float* cuda_signalQ1, float* cuda_signalI2, float* cuda_signalQ2, int lag)
@@ -90,13 +233,13 @@ float crossCorrelationCUDA(
     cudaMemcpy(cuda_signalQ2, signalQ2, 10230 * sizeof(float), cudaMemcpyHostToDevice);
 
 
-    gpu_correlate<<<(10230/256)+1, 256>>>(cuda_signalI1, cuda_signalQ1, cuda_signalI2, cuda_signalQ2, lag);
+    gpu_correlate<<<(10240/256)+1, 256>>>(cuda_signalI1, cuda_signalQ1, cuda_signalI2, cuda_signalQ2, lag);
 
     cudaMemcpy(signalI1, cuda_signalI1, 10230 * sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(signalQ1, cuda_signalQ1, 10230 * sizeof(float), cudaMemcpyDeviceToHost);
 
     std::complex<float> sum = std::complex<float>(0.0f, 0.0f);
-    for (size_t i = 0; i < 10230/256; i++) {
+    for (size_t i = 0; i < 10240/256; i++) {
         sum += std::complex<float>(signalI1[i], signalQ1[i]);
     }
     float realSum = std::abs(sum);
@@ -110,8 +253,6 @@ float crossCorrelationCUDA(
     return realSum;
 
 }
-
-
 
 
 // CUDA Kernel function that runs on the GPU
@@ -130,6 +271,48 @@ __global__ void gpu_resample(float *cuda_fGoldCode, float *cuda_baseBandI, float
     cuda_baseBandI[i] *= cos(carrier_phase);
 
 }
+
+
+// // Convert gold codes to baseband (complex-valued signal)
+// std::vector<std::complex<float>> frequencyShiftAndCorelationCUDA(
+//     const std::vector<int>& goldCode, float frequencyHz , const std::vector<std::complex<float>>& inputSignal) {
+
+//     float signalI1[10230];
+//     float signalQ1[10230];
+
+//     for (size_t i = 0; i < 10230; ++i) {
+//         signalI1[i] = inputSignal[i].real();
+//         signalQ1[i] = inputSignal[i].imag();
+//     }
+
+
+
+//     float *cuda_signalI1;
+//     float *cuda_signalQ1;
+//     // float *cuda_signalI2;
+//     // float *cuda_signalQ2;
+
+
+//     cudaMalloc(&cuda_signalI1, 10240 * sizeof(float));
+//     cudaMalloc(&cuda_signalQ1, 10240 * sizeof(float));
+//     // cudaMalloc(&cuda_signalI2, 10240 * sizeof(float));
+//     // cudaMalloc(&cuda_signalQ2, 10240 * sizeof(float));
+
+//     cudaMemset(cuda_signalI1, 0, 10240 * sizeof(float));
+//     cudaMemset(cuda_signalQ1, 0, 10240 * sizeof(float));
+//     // cudaMemset(cuda_signalI2, 0, 10240 * sizeof(float));
+//     // cudaMemset(cuda_signalQ2, 0, 10240 * sizeof(float));
+
+
+//     cudaMemcpy(cuda_signalI1, signalI1, 10230 * sizeof(float), cudaMemcpyHostToDevice);
+//     cudaMemcpy(cuda_signalQ1, signalQ1, 10230 * sizeof(float), cudaMemcpyHostToDevice);
+//     // cudaMemcpy(cuda_signalI2, signalI2, 10230 * sizeof(float), cudaMemcpyHostToDevice);
+//     // cudaMemcpy(cuda_signalQ2, signalQ2, 10230 * sizeof(float), cudaMemcpyHostToDevice);
+
+//     gpu_resample<<<(10230/256)+1, 256>>>(cuda_fGoldCode, cuda_baseBandI, cuda_baseBandQ, frequencyHz);
+
+// }
+
 
 // Convert gold codes to baseband (complex-valued signal)
 std::vector<std::complex<float>> resampleCaGoldCodeTOneMilisecondOfBasebandCUDA(

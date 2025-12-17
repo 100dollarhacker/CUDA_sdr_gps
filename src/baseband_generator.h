@@ -60,7 +60,7 @@ public:
             // convert to complex baseband signal
 
             // 500 Hz carrier frequency over 1 ms at 10 MHz sample rate
-            float carrier_phase = 2.0f * M_PI * frequencyHz * (i / 10000.0f);
+            float carrier_phase = 2.0f * M_PI * frequencyHz * ((float)i/10230000);
 
             // Apply carrier demodulation
             baseband[i] = inputSignal[i] * std::complex<float>( cos(carrier_phase) , sin(carrier_phase));

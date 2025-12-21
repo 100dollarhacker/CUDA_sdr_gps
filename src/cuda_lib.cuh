@@ -17,4 +17,4 @@ float crossCorrelationCUDA(const std::vector<std::complex<float>>& signal1,
                            const std::vector<std::complex<float>>& signal2,
                            int lag);
 
-int freq_shift_correlateCUDA(const std::vector<int>& goldCode, float freqShiftHz , const std::vector<std::complex<float>>& inputSignal, int lag);
+std::complex<float> freq_shift_correlateCUDA(const std::vector<int>& goldCode, float freqShiftHz , const std::vector<std::complex<float>>& inputSignal, int lag);

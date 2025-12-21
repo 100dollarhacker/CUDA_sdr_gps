@@ -10,19 +10,15 @@
 #include <cuda/std/chrono>
 #include <iostream>
 
-/*
-If CUDA kernel does not launch, or if there is a launch failure, try:
-  sudo rmmod nvidia_uvm
-  sudo modprobe nvidia_uvm
-*/
 
 
-const int  OUTPUT_SIZE = 2*(10240/256);
+
+const int  OUTPUT_SIZE = 2*10240;//2*(10240/256);
 
 
 
 // __global__ void gpu_freq_shift_correlate(float* cuda_signalI1, float* cuda_signalQ1, float* cuda_signalI2, float* cuda_signalQ2, float freqShiftHz,int lag)
-__global__ void gpu_freq_shift_correlate(float* cuda_signalI1, float* cuda_signalQ1, float* cuda_fGoldCode, float freqShiftHz,int lag, float *cuda_output)
+__global__ void     gpu_freq_shift_correlate(float* cuda_signalI1, float* cuda_signalQ1, int* cuda_goldCode, float freqShiftHz,int lag, float *cuda_output)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -30,56 +26,73 @@ __global__ void gpu_freq_shift_correlate(float* cuda_signalI1, float* cuda_signa
     __shared__ float shared_dataQ[256];
 
 
-    float gold_code = cuda_fGoldCode[((i+ lag)/10)%1023] == 1 ? 1 : -1;
+    float gold_code = cuda_goldCode[((i+ lag)/10)%1023] == 1 ? 1.0f : -1.0f;
 
+    //  (A * Cos + jA * SIN) * B(cos + j sin) = (A*B * cos - A*B * sin) + j(A*B * sin + A*B * cos)
+    float r1 =  gold_code * cosf(2.0f * M_PI * freqShiftHz * ((float)i/10230000));
+    float i1 = -1*gold_code * sinf(2.0f * M_PI * freqShiftHz * ((float)i/10230000));
 
-    float real1 =  gold_code * cosf(2.0f * M_PI * freqShiftHz * ((float)i/10230000));
-    float imag1 = real1 * sinf(2.0f * M_PI * freqShiftHz * ((float)i/10230000));
-
-    real1 = cuda_signalI1[i] * real1 - cuda_signalQ1[i] * imag1;
-    imag1 = cuda_signalQ1[i] * real1 + cuda_signalI1[i] * imag1;
+    float real1 = cuda_signalI1[i] * r1 - cuda_signalQ1[i] * i1;
+    // imag1 = cuda_signalQ1[i] * real1 + cuda_signalI1[i] * imag1;
+    // imag1 = gold_code * cosf(2.0f * M_PI * freqShiftHz * ((float)i/10230000)) * imag1 ;// - gold_code * sinf(-2.0f * M_PI * freqShiftHz * ((float)i/10230000)) * real1;
+    // image1 = cos(a) * sin(b) - sin(a) * cos(b) ;
+    // float imag1 = r1 * cuda_signalQ1[i] - sinf(2.0f * M_PI * freqShiftHz * ((float)i/10230000)) * cosf(2.0f * M_PI * freqShiftHz * ((float)i/10230000)) ;
+    float imag1 = r1 * cuda_signalQ1[i] +i1 * cuda_signalI1[i] ;
 
     shared_dataI[threadIdx.x] = real1;
     shared_dataQ[threadIdx.x] = imag1;
 
-    __syncthreads();
+    // __syncthreads();
 
-    // Reduction within the block
-    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
-        if (threadIdx.x < stride) {
-            shared_dataI[threadIdx.x] += shared_dataI[threadIdx.x + stride];
-            shared_dataQ[threadIdx.x] += shared_dataQ[threadIdx.x + stride];
-        }
-        __syncthreads();
-    }
 
     if (threadIdx.x == 0)
     {
+    // Reduction within the block
+        for (int i = 0 ;  i < blockDim.x ; i++)
+        {
+            shared_dataI[0] += shared_dataI[i];
+            shared_dataQ[0] += shared_dataQ[i];
+        }
+    }
 
+    // // // for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
+    // // //     if (threadIdx.x < stride) {
+    // // //         shared_dataI[threadIdx.x] += shared_dataI[threadIdx.x + stride];
+    // // //         shared_dataQ[threadIdx.x] += shared_dataQ[threadIdx.x + stride];
+    // // //     }
+    // // //     __syncthreads();
+    // // // }
+
+    if (threadIdx.x == 0)
+    {
+        // cuda_output[blockIdx.x*2] = shared_dataI[0] ;
         cuda_output[blockIdx.x*2] = shared_dataI[0];
         cuda_output[blockIdx.x*2+1] = shared_dataQ[0];
 
     }
 
+    // cuda_output[2*i] = real1;
+    // cuda_output[2*i+1] = imag1;
+
 
 }
 
 // Convert gold codes to baseband (complex-valued signal)
-int freq_shift_correlateCUDA(const std::vector<int>& goldCode, float freqShiftHz , const std::vector<std::complex<float>>& inputSignal, int lag) {
+std::complex<float> freq_shift_correlateCUDA(const std::vector<int>& goldCode, float freqShiftHz , const std::vector<std::complex<float>>& inputSignal, int lag) {
 
 
-    float fGoldCode[1023];
+    int arrGoldCode[1023];
     float output[OUTPUT_SIZE];
 
-    float *cuda_fGoldCode;
+    int *cuda_goldCode;
 
     for (size_t i = 0; i < 1023; ++i) {
-        fGoldCode[i] = static_cast<float>(goldCode[i]);
+        arrGoldCode[i] = (goldCode[i] == 1? 1.0f : -1.0f);
     }
 
 
-    cudaMalloc(&cuda_fGoldCode, 1023 * sizeof(float));
-    cudaMemcpy(cuda_fGoldCode, fGoldCode, 1023 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMalloc(&cuda_goldCode, 1023 * sizeof(float));
+    cudaMemcpy(cuda_goldCode, arrGoldCode, 1023 * sizeof(int), cudaMemcpyHostToDevice);
 
 
     float signalI1[10230];
@@ -111,11 +124,16 @@ int freq_shift_correlateCUDA(const std::vector<int>& goldCode, float freqShiftHz
     float max_cross = 0 ;
     float max_freq = 0 ;
     int max_lag = 0 ;
-    for (lag = 0; lag < 10230; lag += 3) {
+    std::complex<float> max_sum = std::complex<float>(0.0f, 0.0f);
+    for (lag = 0; lag < 10230; lag += 3)
+    // lag = 1230;
+    {
 
-        for (freqShiftHz = -5000; freqShiftHz <= 5000; freqShiftHz += 250) {
+        for (freqShiftHz = -5000; freqShiftHz <= 5000; freqShiftHz += 250)
+        // freqShiftHz = -250;//3250;
+        {
 
-            gpu_freq_shift_correlate<<<(10230/256)+1, 256>>>(cuda_signalI1, cuda_signalQ1, cuda_fGoldCode,  freqShiftHz, lag, cuda_output);
+            gpu_freq_shift_correlate<<<(10230/256)+1, 256>>>(cuda_signalI1, cuda_signalQ1, cuda_goldCode,  freqShiftHz, lag, cuda_output);
 
             cudaError_t err = cudaGetLastError();
             if (err != cudaSuccess) {
@@ -125,6 +143,12 @@ int freq_shift_correlateCUDA(const std::vector<int>& goldCode, float freqShiftHz
 
 
             cudaMemcpy(output, cuda_output, OUTPUT_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
+
+            // for (int i = 0; i <  OUTPUT_SIZE/2; i++) {
+            //     printf("(%f,%f)", output[2*i], output[2*i+1]);
+            // }
+
+            // exit(1);
 
             std::complex<float> sum = std::complex<float>(0.0f, 0.0f);
             for (size_t i = 0; i < 10240/256; i++) {
@@ -136,6 +160,7 @@ int freq_shift_correlateCUDA(const std::vector<int>& goldCode, float freqShiftHz
                 max_cross = realSum;
                 max_freq = freqShiftHz;
                 max_lag = lag;
+                max_sum = sum;
                 // printf( "Sat #%d freqShiftHz:%f Lag:%d Cross:%d\n", i, freqShiftHz, lag, cross_cuda);
             }
             // printf( "Lag: %d  FreqShiftHz:%f Cross:(%f,%f)\n", lag, freqShiftHz, sum.imag(), sum.real());
@@ -143,13 +168,13 @@ int freq_shift_correlateCUDA(const std::vector<int>& goldCode, float freqShiftHz
         }
         // printf("\n");/
     }
-    printf("max cross:%f max freq:%f max lag:%d\n", max_cross, max_freq, max_lag);
+    printf("max cross:%f max freq:%f max lag:%d chips:%d\n", max_cross, max_freq, max_lag, max_lag/10);
     cudaFree(cuda_output);
     cudaFree(cuda_signalI1);
     cudaFree(cuda_signalQ1);
-    cudaFree(cuda_fGoldCode);
+    cudaFree(cuda_goldCode);
 
-    return 0;// (int)realSum;
+    return max_sum;// (int)realSum;
 
 
 }

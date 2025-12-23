@@ -84,6 +84,9 @@ std::complex<float> freq_shift_correlateLimitedSearchCUDA(const std::vector<int>
     int arrGoldCode[1023];
     float output[OUTPUT_SIZE];
 
+    static int prev_I_sign = 0;
+    static int prev_Q_sign = 0;
+
     int *cuda_goldCode;
 
     for (size_t i = 0; i < 1023; ++i) {
@@ -170,7 +173,16 @@ std::complex<float> freq_shift_correlateLimitedSearchCUDA(const std::vector<int>
         }
         // printf("\n");/
     }
-    printf("max cross:%f max freq:%f max lag:%d chips:%d\n", max_cross, max_freq, max_lag, max_lag/10);
+
+    int current_I_sign = (max_sum.real() >= 0) ? 1 : -1;
+    int current_Q_sign = (max_sum.imag() >= 0) ? 1 : -1;
+    bool sign_changed = (prev_I_sign != current_I_sign) && (prev_Q_sign != current_Q_sign );
+    prev_I_sign = current_I_sign;
+    prev_Q_sign = current_Q_sign;
+
+    printf("max cross:%f max freq:%f max lag:%d chips:%d sign_changed:%d\n", max_cross, max_freq, max_lag, max_lag/10, sign_changed );
+
+
     cudaFree(cuda_output);
     cudaFree(cuda_signalI1);
     cudaFree(cuda_signalQ1);

@@ -20,8 +20,8 @@ const int CHIPS_PER_MS = 10230;
 // const char* FILE_PATH_GPS_IQ_SAMPLE1 = "../../test_data/wave_GPS_L1_samp_10.23MHZ_sats_11_12_20_21.dat2";
 // const char* FILE_PATH_GPS_IQ_SAMPLE1 = "../test_data/wave_157542_sam_1023_sats_5_11_12.dat";
 // const char* FILE_PATH_GPS_IQ_SAMPLE1 = "../test_data/wave_156542_sam_1023_sats_5_11_12.dat";
-// const char* FILE_PATH_GPS_IQ_SAMPLE1 = "../../test_data/gps_sim_data.raw"; // Working
-const char* FILE_PATH_GPS_IQ_SAMPLE1 = "../../test_data/data.raw";
+const char* FILE_PATH_GPS_IQ_SAMPLE1 = "../../test_data/gps_sim_data.raw"; // Working
+// const char* FILE_PATH_GPS_IQ_SAMPLE1 = "../../test_data/data.raw";
 
 
 int first_ten_bits_binary_to_int(vector<int> input)
@@ -565,7 +565,7 @@ TEST(CudaGoldCodeTest, findOneSateCUDA)
 
 
 
-TEST(CudaGoldCodeTest, runOneSateMultipleChipsCUDA)
+TEST(CudaGoldCodeTest, runOneSateMultipleChipsLimitedSearchCUDA)
 {
 
     GPS_IQ_reader reader;
@@ -577,15 +577,15 @@ TEST(CudaGoldCodeTest, runOneSateMultipleChipsCUDA)
     vector<int> goldCode(1023);
     CA_generator ca;
 
-    int satellite_id = 0;
+    int satellite_id =4;
     ca.get_gold_code_sequence(satellite_id, goldCode);
-    float freqShiftHz = 250;
-    int lag = 0;//2778;
+    float freqShiftHz =  -2750;
+    int lag = 5184;
 
     iq_samples.clear();
 
     printf("Processing Sat #%d\n", satellite_id);
-    for (int i = 0;  i < 200 ; i++) {
+    for (int i = 0;  i < 2000 ; i++) {
         // reader.seekSample(0x4000 + i*10230);
         auto samples_out_num = reader.readSamples(10230, iq_samples); // Read 10 ms of IQ samples
 
@@ -597,53 +597,14 @@ TEST(CudaGoldCodeTest, runOneSateMultipleChipsCUDA)
         //                                             // goldCode[(i/10+123)%1023] * std::sin(2.0f * 3.14159265f * freqShiftHz * i / 10.23e6f)));
         // }
 
-        auto cross_cuda = freq_shift_correlateCUDA(goldCode, freqShiftHz , iq_samples,  lag) ;
+        auto cross_cuda = freq_shift_correlateLimitedSearchCUDA(goldCode, freqShiftHz , iq_samples,  lag, i) ;
         iq_samples.clear();
-        printf("Sample %d: Cross:(%f, %f)\n", i, cross_cuda.real(), cross_cuda.imag());
+        printf("Sample %d: Cross:(%f, %f) ", i, cross_cuda.real(), cross_cuda.imag());
     }
 
 }
 
-TEST(CudaGoldCodeTest, runOneSateMultipleChipsWithPhaseCUDA)
-{
 
-    GPS_IQ_reader reader;
-    reader.open(FILE_PATH_GPS_IQ_SAMPLE1);
-    reader.seekSample(0x4000);
-
-    std::vector<std::complex<float>> iq_samples;
-    int max_cross = 0;
-    vector<int> goldCode(1023);
-    CA_generator ca;
-
-    int satellite_id = 11;
-    ca.get_gold_code_sequence(satellite_id, goldCode);
-    float freqShiftHz = -4750.000000f;
-    int lag = 484;//2778;
-
-    iq_samples.clear();
-
-    printf("Processing Sat #%d\n", satellite_id);
-    float phase_offset = 0;
-    for (int i = 0;  i < 200 ; i++) {
-        // reader.seekSample(0x4000 + i*10230);
-        auto samples_out_num = reader.readSamples(10230, iq_samples); // Read 10 ms of IQ samples
-
-        // for (int i = 0; i < 10230; i++) {
-        //     float gc = goldCode[(i/10+123)%1023] == 1 ? 1.0f : -1.0f;
-        //     // float gc = goldCode[(i/10)%1023] == 1 ? 1.0f : -1.0f;
-        //     iq_samples.push_back(std::complex<float>(gc* std::cos(phase_offset + 3.14159265f * freqShiftHz * i / 10.23e6f),
-        //                                              gc* std::sin(phase_offset + 3.14159265f * freqShiftHz * i / 10.23e6f)));
-        //                                             // goldCode[(i/10+123)%1023] * std::sin(2.0f * 3.14159265f * freqShiftHz * i / 10.23e6f)));
-        // }
-
-        // phase_offset +=  3.14159265f * freqShiftHz;
-        auto cross_cuda = freq_shift_correlateCUDA(goldCode, freqShiftHz , iq_samples,  lag) ;
-        iq_samples.clear();
-        printf("Sample %d: Cross:(%f, %f)\n", i, cross_cuda.real(), cross_cuda.imag());
-    }
-
-}
 // Main function to run all tests
 int main(int argc, char **argv)
 {

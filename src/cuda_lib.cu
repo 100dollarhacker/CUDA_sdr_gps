@@ -220,10 +220,10 @@ std::complex<float> freq_shift_correlateLimitedSearchCUDA(const std::vector<int>
 }
 
 
-
+#define PI 3.14159265358979323846
 
 // Convert gold codes to baseband (complex-valued signal)
-gpsTrackingData freq_shift_correlateCUDALimited5(const std::vector<int>& goldCode, float freqShiftHz , const std::vector<std::complex<float>>& inputSignal, int lagCenter) {
+gpsTrackingData freq_shift_correlateCUDALimited5(const std::vector<int>& goldCode, float freqShiftHz , const std::vector<std::complex<float>>& inputSignal, int lagCenter, int sampleNumber) {
 
 
     int arrGoldCode[1023];
@@ -284,7 +284,8 @@ gpsTrackingData freq_shift_correlateCUDALimited5(const std::vector<int>& goldCod
         // freqShiftHz = -250;//3250;
         {
 
-            gpu_freq_shift_correlate<<<(SAMPLES_PER_MS/256)+1, 256>>>(0, cuda_signalI1, cuda_signalQ1, cuda_goldCode,  freqShiftHz, lag, cuda_output);
+
+            gpu_freq_shift_correlate<<<(SAMPLES_PER_MS/256)+1, 256>>>(sampleNumber/1000 * 2*PI *freqShiftHz, cuda_signalI1, cuda_signalQ1, cuda_goldCode,  freqShiftHz, lag, cuda_output);
 
             cudaError_t err = cudaGetLastError();
             if (err != cudaSuccess) {

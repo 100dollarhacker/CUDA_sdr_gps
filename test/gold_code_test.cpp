@@ -633,8 +633,10 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
 
         int lagShift = 0;
         int freqShift = 0;
+        int prevIsign = 1;
+        int prevRsign = 1;
         //     for (lag = 0 ; lag < CHIPS_PER_MS ; lag+=3) {
-            for (int samples = 0 ; samples < 500; samples++) {
+            for (int samples = 0 ; samples < 1000; samples++) {
                 reader.readSamples(CHIPS_PER_MS, iq_samples); // Read 10 ms of IQ samples
 
                  // go over the entire signal and add average to remove HackRF DC spike
@@ -653,7 +655,7 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
                     iq_samples[idx] -= std::complex<float>(avgI, avgQ);
                 }
 
-                gpsTrackingData trackingData = freq_shift_correlateCUDALimited5(goldCode, freqShiftHz , iq_samples,  lag) ;
+                gpsTrackingData trackingData = freq_shift_correlateCUDALimited5(goldCode, freqShiftHz , iq_samples,  lag, samples) ;
                 iq_samples.clear();
 
                 if (trackingData.lag < lag)
@@ -674,8 +676,20 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
                     lagShift = 0;
                 }
 
+                if (samples % 2 == 0 ) {
+                    int signChange =   prevRsign * trackingData.maxCrossCorrelation.real() < 0 &&  prevIsign * trackingData.maxCrossCorrelation.imag() < 0 ? 1 : 0;
+                    printf("Sat #%d signChange:%d freqShiftHz:%f Lag:%d Cross:%d R:%f I:%f Rsign:%d Isign:%d\n", i, signChange, trackingData.freqShiftHz, trackingData.lag,
+                        (int)std::abs(trackingData.maxCrossCorrelation), trackingData.maxCrossCorrelation.real(), trackingData.maxCrossCorrelation.imag(),
+                          prevRsign * trackingData.maxCrossCorrelation.real() > 0 ? 1 : -1, prevIsign * trackingData.maxCrossCorrelation.imag() > 0 ? 1 : -1
+                        );
 
-                printf("Sat #%d freqShiftHz:%f Lag:%d Cross:%d\n", i, trackingData.freqShiftHz, trackingData.lag, (int)std::abs(trackingData.maxCrossCorrelation));
+
+
+                    prevRsign = trackingData.maxCrossCorrelation.real() > 0 ? 1 : -1;
+                    prevIsign = trackingData.maxCrossCorrelation.imag() > 0 ? 1 : -1;
+
+                }
+
                 // auto cross_cuda = (int)abs(cross_cuda_complex);
                 // if (cross_cuda > max_cross) {
                 //     max_cross = cross_cuda;

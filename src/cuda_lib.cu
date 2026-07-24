@@ -206,7 +206,7 @@ std::complex<float> freq_shift_correlateLimitedSearchCUDA(const std::vector<int>
         printf("|");
     }
     printf("%c", (priv_bit == 0) ? '.' : '_');
-    // printf("max cross:%f max freq:%f max lag:%d chips:%d sign_changed:%d\n", max_cross, max_freq, max_lag, max_lag/SAMPLES_PER_CHIP, sign_changed );
+    printf("max_real:%f max_img:%f max cross:%f max freq:%f max lag:%d chips:%d sign_changed:%d\n",max_sum.real(), max_sum.imag(), max_cross, max_freq, max_lag, max_lag/SAMPLES_PER_CHIP, sign_changed );
 
 
     cudaFree(cuda_output);
@@ -215,6 +215,122 @@ std::complex<float> freq_shift_correlateLimitedSearchCUDA(const std::vector<int>
     cudaFree(cuda_goldCode);
 
     return max_sum;// (int)realSum;
+
+
+}
+
+
+
+
+// Convert gold codes to baseband (complex-valued signal)
+gpsTrackingData freq_shift_correlateCUDALimited5(const std::vector<int>& goldCode, float freqShiftHz , const std::vector<std::complex<float>>& inputSignal, int lagCenter) {
+
+
+    int arrGoldCode[1023];
+    float output[OUTPUT_SIZE];
+
+    int *cuda_goldCode;
+
+    for (size_t i = 0; i < 1023; ++i) {
+        arrGoldCode[i] = (goldCode[i] == 1? 1.0f : -1.0f);
+    }
+
+
+    cudaMalloc(&cuda_goldCode, 1023 * sizeof(float));
+    cudaMemcpy(cuda_goldCode, arrGoldCode, 1023 * sizeof(int), cudaMemcpyHostToDevice);
+
+
+    // for (int i = 0; i < SAMPLES_PER_MS; i++)
+    //     printf("%d\n", (int)((float)i*SAMPLES_PER_CHIP_FRAC));
+    //     // printf("%d\n", (((i+ lag)*SAMPLES_PER_CHIP_FRAC)/SAMPLES_PER_CHIP)%1023);
+    // exit(1);
+
+    float signalI1[SAMPLES_PER_MS];
+    float signalQ1[SAMPLES_PER_MS];
+
+    for (size_t i = 0; i < SAMPLES_PER_MS; ++i) {
+        signalI1[i] = inputSignal[i].real();
+        signalQ1[i] = inputSignal[i].imag();
+    }
+
+
+
+    float *cuda_signalI1;
+    float *cuda_signalQ1;
+    float *cuda_output;
+
+    cudaMalloc(&cuda_signalI1, SAMPLES_PER_MS * sizeof(float));
+    cudaMalloc(&cuda_signalI1, SAMPLES_PER_MS * sizeof(float));
+    cudaMalloc(&cuda_signalQ1, SAMPLES_PER_MS * sizeof(float));
+    cudaMalloc(&cuda_output, OUTPUT_SIZE * sizeof(float));
+
+    cudaMemset(cuda_signalI1, 0, SAMPLES_PER_MS * sizeof(float));
+    cudaMemset(cuda_signalQ1, 0, SAMPLES_PER_MS * sizeof(float));
+
+
+    cudaMemcpy(cuda_signalI1, signalI1, SAMPLES_PER_MS * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(cuda_signalQ1, signalQ1, SAMPLES_PER_MS * sizeof(float), cudaMemcpyHostToDevice);
+
+    float max_cross = 0 ;
+    float max_freq = 0 ;
+    int max_lag = 0 ;
+    std::complex<float> max_sum = std::complex<float>(0.0f, 0.0f);
+    float IF = 0;//10.23e6; // 1.023 MHz * 10
+    for (int lag = lagCenter - 6; lag < lagCenter + 6; lag += 3)
+    // lag = 1230;
+    {
+
+        for (IF = freqShiftHz-500; IF <= freqShiftHz + 250; IF += 500)
+        // freqShiftHz = -250;//3250;
+        {
+
+            gpu_freq_shift_correlate<<<(SAMPLES_PER_MS/256)+1, 256>>>(0, cuda_signalI1, cuda_signalQ1, cuda_goldCode,  freqShiftHz, lag, cuda_output);
+
+            cudaError_t err = cudaGetLastError();
+            if (err != cudaSuccess) {
+                printf("CUDA Error: %s\n", cudaGetErrorString(err));
+                exit(1); // If CUDA fails, there is nothing we can do
+            }
+
+
+            cudaMemcpy(output, cuda_output, OUTPUT_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
+
+            // for (int i = 0; i <  OUTPUT_SIZE/2; i++) {
+            //     printf("(%f,%f)", output[2*i], output[2*i+1]);
+            // }
+
+            // exit(1);
+
+            std::complex<float> sum = std::complex<float>(0.0f, 0.0f);
+            for (size_t i = 0; i < BLOCK_SIZE; i++) {
+                sum += std::complex<float>(output[2*i], output[2*i+1]);
+            }
+            float realSum = std::abs(sum);
+
+            if (realSum > max_cross) {
+                max_cross = realSum;
+                max_freq = freqShiftHz;
+                max_lag = lag;
+                max_sum = sum;
+                // printf( "Sat #%d freqShiftHz:%f Lag:%d Cross:%d\n", i, freqShiftHz, lag, cross_cuda);
+            }
+            // printf( "Lag: %d  FreqShiftHz:%f Cross:(%f,%f)\n", lag, freqShiftHz, sum.imag(), sum.real());
+            // printf("%f,", realSum);
+        }
+        // printf("\n");/
+    }
+    // printf("max cross:%f max freq:%f max lag:%d chips:%d\n", max_cross, max_freq, max_lag, max_lag/SAMPLES_PER_CHIP);
+    cudaFree(cuda_output);
+    cudaFree(cuda_signalI1);
+    cudaFree(cuda_signalQ1);
+    cudaFree(cuda_goldCode);
+
+    gpsTrackingData trackingData;
+    trackingData.freqShiftHz = max_freq;
+    trackingData.lag = max_lag;
+    trackingData.maxCrossCorrelation = max_sum;
+
+    return trackingData;// (int)realSum;
 
 
 }

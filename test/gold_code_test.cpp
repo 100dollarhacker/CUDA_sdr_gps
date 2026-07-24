@@ -620,13 +620,13 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
 
     //for (int i = 0; i < 32; i++)
     // for (int i = 10; i < 14; i++)
-    int i =24;
+    int i =24;//28;//24;
     {
 
         // int i = 4; // test for satelite 1
         ca.get_gold_code_sequence(i, goldCode);
-        float freqShiftHz = -2500;//1000;
-        int lag = 21036;
+        float freqShiftHz = -2500;//1000;//-2500;
+        int lag = 21036;//8109;//21036;
 
         printf("Processing Sat #%d\n", i);
         // for (freqShiftHz = -5000; freqShiftHz <= 5000; freqShiftHz += 500) {
@@ -635,8 +635,11 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
         int freqShift = 0;
         int prevIsign = 1;
         int prevRsign = 1;
+        int bit = 0;
+        int wasSignChange = 0;
+        int bitCount = 0;
         //     for (lag = 0 ; lag < CHIPS_PER_MS ; lag+=3) {
-            for (int samples = 0 ; samples < 1000; samples++) {
+            for (int samples = 0 ; samples < 6000; samples++) {
                 reader.readSamples(CHIPS_PER_MS, iq_samples); // Read 10 ms of IQ samples
 
                  // go over the entire signal and add average to remove HackRF DC spike
@@ -668,20 +671,40 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
                 }
 
 
+                // Track the lag, update them when not in sync.
                 if (samples % 10 == 0) {
-                    printf("lagshift:%d\n", lagShift);
+                    // printf("lagshift:%d\n", lagShift);
                     if (lagShift < 5) lag -= 3;
                     if (lagShift > 5) lag += 3;
+
 
                     lagShift = 0;
                 }
 
+                if (samples % 20 == 0 ) {
+
+                    bitCount++;
+                    if (bitCount % 30 == 0) {
+                        printf("|");
+                    }
+                    printf("%d", bit);
+
+                    if (wasSignChange) {
+                        bit ^= 1;
+                    }
+                    wasSignChange = 0;
+                }
+
+                //TODO:: Understand why sign change is maybe there is some hiden frequency I am not aware of.
                 if (samples % 2 == 0 ) {
                     int signChange =   prevRsign * trackingData.maxCrossCorrelation.real() < 0 &&  prevIsign * trackingData.maxCrossCorrelation.imag() < 0 ? 1 : 0;
-                    printf("Sat #%d signChange:%d freqShiftHz:%f Lag:%d Cross:%d R:%f I:%f Rsign:%d Isign:%d\n", i, signChange, trackingData.freqShiftHz, trackingData.lag,
-                        (int)std::abs(trackingData.maxCrossCorrelation), trackingData.maxCrossCorrelation.real(), trackingData.maxCrossCorrelation.imag(),
-                          prevRsign * trackingData.maxCrossCorrelation.real() > 0 ? 1 : -1, prevIsign * trackingData.maxCrossCorrelation.imag() > 0 ? 1 : -1
-                        );
+                    if (signChange) {
+                        wasSignChange  = 1;
+                    }
+                    // printf("Sat #%d signChange:%d freqShiftHz:%f Lag:%d Cross:%d R:%f I:%f Rsign:%d Isign:%d\n", i, signChange, trackingData.freqShiftHz, trackingData.lag,
+                    //     (int)std::abs(trackingData.maxCrossCorrelation), trackingData.maxCrossCorrelation.real(), trackingData.maxCrossCorrelation.imag(),
+                    //       prevRsign * trackingData.maxCrossCorrelation.real() > 0 ? 1 : -1, prevIsign * trackingData.maxCrossCorrelation.imag() > 0 ? 1 : -1
+                    //     );
 
 
 

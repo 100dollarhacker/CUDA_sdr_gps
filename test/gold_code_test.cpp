@@ -695,8 +695,8 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
                     wasSignChange = 0;
                 }
 
-                //TODO:: Understand why sign change is maybe there is some hiden frequency I am not aware of.
-                if (samples % 2 == 0 ) {
+                // if (samples % 2 == 0 )
+                {
                     int signChange =   prevRsign * trackingData.maxCrossCorrelation.real() < 0 &&  prevIsign * trackingData.maxCrossCorrelation.imag() < 0 ? 1 : 0;
                     if (signChange) {
                         wasSignChange  = 1;

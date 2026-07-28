@@ -31,6 +31,8 @@ const int CHIPS_PER_MS = 25000;
 
 // File downloaded from https://etsin.fairdata.fi/dataset/63f8b776-680b-4c98-ace7-d5e443f2b1c5/data
 const char* FILE_PATH_GPS_IQ_SAMPLE1 =  "../../test_data/skydel_L1_real_gps.raw"; // Working!
+// const char* FILE_PATH_GPS_IQ_SAMPLE1 =  "../../test_data/gps_sim_data_25MBPS.raw"; // ???
+
 // const char*     FILE_PATH_GPS_IQ_SAMPLE1 = "../../test_data/data_clean_575MHz_Sine_10MHZSampling_Band5MHZ.raw";// No Signal how it possible ;)
 // const char*     FILE_PATH_GPS_IQ_SAMPLE1 = "../../test_data/data_clean_949MHz_Sine_10MHZSampling_Band5MHZ.raw";// No Signal how it possible ;)
 // const char*     FILE_PATH_GPS_IQ_SAMPLE1 = "../../test_data/data_clean_950MHzplus1KHz_Sine_10MHZSampling_Band5MHZ.raw";// No Signal how it possible ;)
@@ -556,9 +558,9 @@ TEST(CudaGoldCodeTest, findOneSateCUDA)
 
     printf("Running on file :%s\n", FILE_PATH_GPS_IQ_SAMPLE1);
 
-    //for (int i = 0; i < 32; i++)
+    for (int i  = 0; i < 32; i++)
     // for (int i = 10; i < 14; i++)
-    int i =24;
+    // int i =24;
     {
 
         // int i = 4; // test for satelite 1
@@ -570,7 +572,7 @@ TEST(CudaGoldCodeTest, findOneSateCUDA)
         // for (freqShiftHz = -5000; freqShiftHz <= 5000; freqShiftHz += 500) {
 
         //     for (lag = 0 ; lag < CHIPS_PER_MS ; lag+=3) {
-            for (int samples = 0 ; samples < 300; samples++) {
+            for (int samples = 0 ; samples < 3; samples++) {
                 reader.readSamples(CHIPS_PER_MS, iq_samples); // Read 10 ms of IQ samples
 
                  // go over the entire signal and add average to remove HackRF DC spike
@@ -620,13 +622,13 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
 
     //for (int i = 0; i < 32; i++)
     // for (int i = 10; i < 14; i++)
-    int i =24;//28;//24;
+    int i = 24;//23;//28;//24;
     {
 
         // int i = 4; // test for satelite 1
         ca.get_gold_code_sequence(i, goldCode);
-        float freqShiftHz = -2500;//1000;//-2500;
-        int lag = 21036;//8109;//21036;
+        float freqShiftHz = -2500;//1500;//1000;//-2500;
+        int lag = 21036;//10305;//8109;//21036;
 
         printf("Processing Sat #%d\n", i);
         // for (freqShiftHz = -5000; freqShiftHz <= 5000; freqShiftHz += 500) {
@@ -638,9 +640,11 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
         int bit = 0;
         int wasSignChange = 0;
         int bitCount = 0;
+        int preamble = 0 ;
         //     for (lag = 0 ; lag < CHIPS_PER_MS ; lag+=3) {
-            for (int samples = 0 ; samples < 6000; samples++) {
-                reader.readSamples(CHIPS_PER_MS, iq_samples); // Read 10 ms of IQ samples
+            for (int samples = 0 ; samples < 60000; samples++) {
+                if (reader.readSamples(CHIPS_PER_MS, iq_samples) == 0) // Read 10 ms of IQ samples
+                    break;
 
                  // go over the entire signal and add average to remove HackRF DC spike
                 static float avgI = 0.0f;
@@ -684,14 +688,29 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
                 if (samples % 20 == 0 ) {
 
                     bitCount++;
-                    if (bitCount % 30 == 0) {
+
+
+
+                    if (bitCount % 300 == 0) {
+                        printf("|||");
+                    } else if (bitCount %30 == 0) {
                         printf("|");
                     }
-                    printf("%d", bit);
 
                     if (wasSignChange) {
                         bit ^= 1;
                     }
+
+                    printf("%d", bit);
+                    preamble = ((preamble << 1) | bit) & 0b11111111; ;
+                    if (preamble == 0b01110100 || preamble == 0b10001011) {
+
+                        printf("\nFound preamble at sample %d\n", samples);
+                    }
+                    if (preamble == 0b00101110 || preamble == 0b11010001) {
+                        printf("\nFound reversed   preamble at sample %d\n", samples);
+                    }
+
                     wasSignChange = 0;
                 }
 

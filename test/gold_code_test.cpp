@@ -703,10 +703,10 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
 
                     printf("%d", bit);
                     preamble = ((preamble << 1) | bit) & 0b11111111; ;
-                    if (preamble == 0b01110100 || preamble == 0b10001011) {
+                    // if (preamble == 0b01110100 || preamble == 0b10001011) {
 
-                        printf("\nFound preamble at sample %d\n", samples);
-                    }
+                    //     printf("\nFound preamble at sample %d\n", samples);
+                    // }
                     if (preamble == 0b00101110 || preamble == 0b11010001) {
                         printf("\nFound reversed   preamble at sample %d\n", samples);
                     }

@@ -14,7 +14,7 @@
 const int CHIPS_PER_MS = 25000;
 
 
-// const int CHIPS_PER_MS = 1023*10;
+// const int CHIPS_PER_MS = div.products  .product-element-top> a[href]1023*10;
 
 // const char* FILE_PATH_GPS_IQ_SAMPLE1 = "../test_data/wave_1565190Mhz_samp_1023KHz_sats_11_19.dat";
 // const char* FILE_PATH_GPS_IQ_SAMPLE1 = "../test_data/wave_GPS_L1_samp_10.23MHZ_sats_11_12_20_21";
@@ -558,9 +558,9 @@ TEST(CudaGoldCodeTest, findOneSateCUDA)
 
     printf("Running on file :%s\n", FILE_PATH_GPS_IQ_SAMPLE1);
 
-    for (int i  = 0; i < 32; i++)
+    // for (int i  = 0; i < 32; i++)
     // for (int i = 10; i < 14; i++)
-    // int i =24;
+    int i =12;
     {
 
         // int i = 4; // test for satelite 1
@@ -572,8 +572,15 @@ TEST(CudaGoldCodeTest, findOneSateCUDA)
         // for (freqShiftHz = -5000; freqShiftHz <= 5000; freqShiftHz += 500) {
 
         //     for (lag = 0 ; lag < CHIPS_PER_MS ; lag+=3) {
-            for (int samples = 0 ; samples < 3; samples++) {
+            for (int samples = 0 ; samples < 100; samples++) {
                 reader.readSamples(CHIPS_PER_MS, iq_samples); // Read 10 ms of IQ samples
+
+                // skip 100 ms
+                for (int y = 0 ; y < 100 ; y++)
+                {
+                    iq_samples.clear();
+                    reader.readSamples(CHIPS_PER_MS, iq_samples);
+                }
 
                  // go over the entire signal and add average to remove HackRF DC spike
                 static float avgI = 0.0f;
@@ -605,12 +612,152 @@ TEST(CudaGoldCodeTest, findOneSateCUDA)
 }
 
 
+/**
+ * Checks the parity of a received 30-bit GPS word.
+ *
+ * @param received_word The 30-bit word received from the satellite (Bits 1-30 aligned as MSB-to-LSB).
+ * @param prev_d29      Bit 29 from the previous GPS word (0 or 1).
+ * @param prev_d30      Bit 30 from the previous GPS word (0 or 1).
+ * @param out_data      Pointer to store the corrected, recovered 24-bit raw data.
+ * @return true if the parity check passes, false otherwise.
+ */
+bool check_gps_parity(uint32_t received_word, uint8_t prev_d29, uint8_t prev_d30, uint32_t *out_data) {
+    // Extract transmitted bits from the 30-bit word (received_word contains bits 30 down to 1)
+    // Shift maps D1 -> bit 29 down to D30 -> bit 0
+    uint32_t D[31];
+    for (int i = 1; i <= 30; i++) {
+        D[i] = (received_word >> (30 - i+2  )) & 1;
+    }
+
+    printf("Received Word: 0x%08X  prev_d29: %d prev_d30: %d\n", received_word, prev_d29, prev_d30);
+    printf("Extracted Bits: ");
+    for (int i = 1; i <= 30; i++) {
+        if ((i-1)%10 == 0)
+            printf("|");
+        printf("%d", D[i]);
+    }
+    printf("\n");
+
+    // Step 1: Recover raw data bits (d1 to d24) by checking previous word's D30 bit
+    uint32_t d[25];
+    for (int i = 1; i <= 24; i++) {
+
+        // d[i] ^= 1;
+        if (prev_d30 == 1) {
+            d[i] = D[i] ^ 1; // Invert if previous D30 was 1
+        } else {
+            d[i] = D[i];     // Keep unchanged if previous D30 was 0
+        }
+    }
+
+    // Step 2: Compute parity bits (D25 to D30) based on IS-GPS-200 matrix equations
+    uint32_t W25 = prev_d29 ^ d[1] ^ d[2] ^ d[3] ^ d[5] ^ d[6] ^ d[10] ^ d[11] ^ d[12] ^ d[13] ^ d[14] ^ d[17] ^ d[18] ^ d[20] ^ d[23];
+    uint32_t W26 = prev_d30 ^ d[2] ^ d[3] ^ d[4] ^ d[6] ^ d[7] ^ d[11] ^ d[12] ^ d[13] ^ d[14] ^ d[15] ^ d[18] ^ d[19] ^ d[21] ^ d[24];
+    uint32_t W27 = prev_d29 ^ d[1] ^ d[3] ^ d[4] ^ d[5] ^ d[7] ^ d[8] ^ d[12] ^ d[13] ^ d[14] ^ d[15] ^ d[16] ^ d[19] ^ d[20] ^ d[22];
+    uint32_t W28 = prev_d30 ^ d[2] ^ d[4] ^ d[5] ^ d[6] ^ d[8] ^ d[9] ^ d[13] ^ d[14] ^ d[15] ^ d[16] ^ d[17] ^ d[20] ^ d[21] ^ d[23];
+    uint32_t W29 = prev_d30 ^ d[1] ^ d[3] ^ d[5] ^ d[6] ^ d[7] ^ d[9] ^ d[10] ^ d[14] ^ d[15] ^ d[16] ^ d[17] ^ d[18] ^ d[21] ^ d[22] ^ d[24];
+    uint32_t W30 = prev_d29 ^ d[3] ^ d[5] ^ d[6] ^ d[8] ^ d[9] ^ d[11] ^ d[13] ^ d[15] ^ d[19] ^ d[22] ^ d[23] ^ d[24];
+
+
+    printf("Calculated Parity: W25=%d, W26=%d, W27=%d, W28=%d, W29=%d, W30=%d\n", W25, W26, W27, W28, W29, W30);
+
+
+    //exit(123);
+    // Step 3: Compare calculated parity against received parity bits
+    if (W25 == D[25] && W26 == D[26] && W27 == D[27] &&
+        W28 == D[28] && W29 == D[29] && W30 == D[30]) {
+
+        // Pass: Pack recovered data array back into a compact uint32_t container
+        uint32_t data = 0;
+        for (int i = 1; i <= 24; i++) {
+            data = (data << 1) | d[i];
+        }
+        *out_data = data;
+        printf("Parity check succesful \n");
+        return true;
+    }
+
+    printf("Oh, no! Parity check failed \n");
+    return false; // Parity failure
+}
+
+uint32_t reverse_bits(uint32_t num) {
+    uint32_t result = 0;
+    for (int i = 0; i < 32; i++) {
+        result <<= 1;          // Shift the result to make room for the next bit
+        result |= (num & 1);   // Grab the last bit of num and add it to result
+        num >>= 1;             // Shift num to process the next bit
+    }
+    return result;
+}
+
+bool check_gps_32bit_parity(uint32_t data) {
+
+   uint32_t recovered_data = 0;
+
+   printf("Checking 32-bit data: 0x%08X\n", data);
+
+    if (check_gps_parity(reverse_bits(data),
+                (data & 0x40000000) == 0 ? 0 :1,
+                (data & 0x80000000) == 0 ? 0 :1 , &recovered_data)) {
+        printf("Parity Check: PASSED\n");
+        printf("Recovered Data: 0x%06X\n", recovered_data);
+        return true;
+    } else {
+        printf("Parity Check: FAILED\n");
+        return false;
+    }
+}
+
+std::vector<std::complex<float>> run_fft_and_print_freq(std::vector<std::complex<float>> subinput)
+{
+
+    // std::vector<std::complex<float>> subinput;
+    auto fft_res = ft::fft_from_complex(subinput);
+
+    float max_abs = 0.0f;
+    int max_idx = 0;
+    for(int i =1 ; i < fft_res.size(); i++) {
+        if (max_abs < abs(fft_res[i])) {
+            max_abs = abs(fft_res[i]);
+            max_idx = i;
+        }
+    }
+
+    printf("Max FFT index: %d  Max FFT abs: %.3f\n", max_idx, max_abs/1000000);
+
+    for(int i= 0 ; i < fft_res.size(); i++) {
+        printf("(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs(fft_res[i]) /1000000,fft_res[i].real()/1000, fft_res[i].imag()/1000);
+    }
+
+    subinput.clear();
+    printf("After clearing subinput:\n");
+    for(int i= 0 ; i < fft_res.size(); i++) {
+        fft_res[i] = 0;
+        printf("(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs(fft_res[i]) /1000000,fft_res[i].real()/1000, fft_res[i].imag()/1000);
+    }
+
+
+    fft_res[max_idx/2] = max_abs;
+    ft::ifft_inplace(fft_res);
+
+    printf("After IFFT:\n");
+    for(int i =0 ; i < fft_res.size(); i++) {
+        printf("(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs(fft_res[i]) /1000000,fft_res[i].real()/1000, fft_res[i].imag()/1000);
+    }
+
+    return fft_res;
+
+}
+
+
 TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
 {
 
     GPS_IQ_reader reader;
     reader.open(FILE_PATH_GPS_IQ_SAMPLE1);
     reader.seekSample(45000);
+    int data_bits[300];
 
     std::vector<std::complex<float>> iq_samples;
     reader.readSamples(CHIPS_PER_MS, iq_samples); // Read 10 ms of IQ samples
@@ -618,29 +765,65 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
     vector<int> goldCode(1023);
     CA_generator ca;
 
+        // Example test case: A real GPS Telemetry (TLM) Word sample
+    uint32_t test_word = 0x0000000C; // 30 bits: [MSB] 10001 00101 01011 01000 01010 11010 [LSB]
+    uint8_t p_d29 = 0;
+    uint8_t p_d30 = 0;
+    uint32_t recovered_data = 0;
+
+/**
+ *
+ *  if ((preamble & 0b11111111) == 0b00101110 || (preamble & 0b11111111) == 0b11010001) {
+                        printf("\nFound reversed data: %X  preamble at  bit %d  sample %d \n",preamble, bit, samples);
+
+                        if (check_gps_parity(reverse_bits(preamble),
+                                 preamble & 0x40000000 == 0 ? 0 :1,
+                                 preamble & 0x80000000 == 0 ? 0 :1 , &recovered_data)) {
+                        printf("Parity Check: PASSED\n");
+                        printf("Recovered Data: 0x%06X\n", recovered_data);
+                    } else {
+                        printf("Parity Check: FAILED\n");
+                    }
+                    }
+
+ */
+
+
+    // check_gps_32bit_parity(0x0000000C);
+    check_gps_32bit_parity(0x00000003);
+    // check_gps_32bit_parity(0x00000000);
+    // if (check_gps_parity(test_word, p_d29, p_d30, &recovered_data)) {
+    //     printf("Parity Check: PASSED\n");
+    //     printf("Recovered Data: 0x%06X\n", recovered_data);
+    // } else {
+    //     printf("Parity Check: FAILED\n");
+    // }
+
+    // exit(0);
     printf("Running on file :%s\n", FILE_PATH_GPS_IQ_SAMPLE1);
 
     //for (int i = 0; i < 32; i++)
     // for (int i = 10; i < 14; i++)
-    int i = 24;//23;//28;//24;
+    int i = 24;//24;//23;//28;//24;
     {
 
         // int i = 4; // test for satelite 1
         ca.get_gold_code_sequence(i, goldCode);
-        float freqShiftHz = -2500;//1500;//1000;//-2500;
-        int lag = 21036;//10305;//8109;//21036;
+        float freqShiftHz = -2500;//-2500;//1500;//1000;//-2500;
+        int lag = 21036;//21036;//10305;//8109;//21036;
 
         printf("Processing Sat #%d\n", i);
         // for (freqShiftHz = -5000; freqShiftHz <= 5000; freqShiftHz += 500) {
-
+        const int SAMPLES_DATA_SIZE = 256;
+        vector<std::complex<float>> samples_data = vector<std::complex<float>>(SAMPLES_DATA_SIZE);
         int lagShift = 0;
         int freqShift = 0;
-        int prevIsign = 1;
-        int prevRsign = 1;
+        int prevIsign = 1, lastIsign = 1 ;
+        int prevRsign = 1, lastRsign = 1;
         int bit = 0;
         int wasSignChange = 0;
         int bitCount = 0;
-        int preamble = 0 ;
+        uint32_t preamble = 0 ;
         //     for (lag = 0 ; lag < CHIPS_PER_MS ; lag+=3) {
             for (int samples = 0 ; samples < 60000; samples++) {
                 if (reader.readSamples(CHIPS_PER_MS, iq_samples) == 0) // Read 10 ms of IQ samples
@@ -673,23 +856,38 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
                 {
                     lagShift++;
                 }
-
+const int LOG_LOG = 1;
 
                 // Track the lag, update them when not in sync.
-                if (samples % 10 == 0) {
+                if (samples % 20 == 0) {
                     // printf("lagshift:%d\n", lagShift);
-                    if (lagShift < 5) lag -= 3;
-                    if (lagShift > 5) lag += 3;
+                    if (lagShift < -5) {
+                        lag -= 3;
+                        if (LOG_LOG)printf(">>l<<");
+                    }
+                    if (lagShift > 5) {
+                        lag += 3;
+                        if (LOG_LOG) printf(">>L<<");
+                    }
 
 
                     lagShift = 0;
                 }
 
+                samples_data[samples % SAMPLES_DATA_SIZE] = trackingData.maxCrossCorrelation;
                 if (samples % 20 == 0 ) {
 
                     bitCount++;
 
+                    if (samples % SAMPLES_DATA_SIZE == 0 && samples > 0) {
+                        auto fft_res = run_fft_and_print_freq(samples_data);
 
+                        for(int i= 0 ; i < fft_res.size(); i++) {
+                            std::complex<float> val = conj(fft_res[i]) *  samples_data[i];
+                            printf("VAL:(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs(val) /10000000,val.real()/10000, val.imag()/10000);
+                        }
+
+                    }
 
                     if (bitCount % 300 == 0) {
                         printf("|||");
@@ -701,14 +899,36 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
                         bit ^= 1;
                     }
 
-                    printf("%d", bit);
-                    preamble = ((preamble << 1) | bit) & 0b11111111; ;
-                    // if (preamble == 0b01110100 || preamble == 0b10001011) {
+                    data_bits[bitCount % 300] = bit;
 
-                    //     printf("\nFound preamble at sample %d\n", samples);
-                    // }
-                    if (preamble == 0b00101110 || preamble == 0b11010001) {
-                        printf("\nFound reversed   preamble at sample %d\n", samples);
+
+                    // printf("%d", bit);
+                    if (LOG_LOG) printf("%d(%d)", bit, bitCount);
+
+
+                    preamble = ((preamble << 1) | (bit & 0x1) ) ;//& 0xC0000000;// 0b11111111; ;
+
+                    if ((preamble & 0b11111111) == 0b00101110 || (preamble & 0b11111111) == 0b11010001) {
+
+                        printf("\nFound preamble at sample %d\n ----", samples);
+                        for (int i = 0; i < 300; i++) {
+                            printf("%d", data_bits[(bitCount-i)%300]);
+                            if (i  % 30 == 29) {
+                                printf("-");
+                            }
+                        }
+                        printf("---\n");
+
+                    }
+                    if ((preamble & 0b11111111) == 0b00101110 || (preamble & 0b11111111) == 0b11010001) {
+                        printf("\nFound reversed data: %X  preamble at  bitCount %d  sample %d \n",preamble, bitCount, samples);
+
+                        if (check_gps_32bit_parity(preamble) || check_gps_32bit_parity(~preamble)) {
+                            printf("Parity Check: PASSED\n");
+                        // printf("Recovered Data: 0x%06X\n", recovered_data);
+                        } else {
+                            printf("Parity Check: FAILED\n");
+                        }
                     }
 
                     wasSignChange = 0;
@@ -720,15 +940,19 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
                     if (signChange) {
                         wasSignChange  = 1;
                     }
-                    // printf("Sat #%d signChange:%d freqShiftHz:%f Lag:%d Cross:%d R:%f I:%f Rsign:%d Isign:%d\n", i, signChange, trackingData.freqShiftHz, trackingData.lag,
-                    //     (int)std::abs(trackingData.maxCrossCorrelation), trackingData.maxCrossCorrelation.real(), trackingData.maxCrossCorrelation.imag(),
-                    //       prevRsign * trackingData.maxCrossCorrelation.real() > 0 ? 1 : -1, prevIsign * trackingData.maxCrossCorrelation.imag() > 0 ? 1 : -1
-                    //     );
+                    if (LOG_LOG) printf("Sat #%d signChange:%d freqShiftHz:%f Lag:%d Cross:%d R:%f I:%f Rsign:%d Isign:%d\n", i, signChange, trackingData.freqShiftHz, trackingData.lag,
+                        (int)std::abs(trackingData.maxCrossCorrelation), trackingData.maxCrossCorrelation.real(), trackingData.maxCrossCorrelation.imag(),
+                          prevRsign * trackingData.maxCrossCorrelation.real() > 0 ? 1 : -1, prevIsign * trackingData.maxCrossCorrelation.imag() > 0 ? 1 : -1
+                        );
 
 
+                    prevRsign = lastRsign;
+                    prevIsign = lastIsign;
 
-                    prevRsign = trackingData.maxCrossCorrelation.real() > 0 ? 1 : -1;
-                    prevIsign = trackingData.maxCrossCorrelation.imag() > 0 ? 1 : -1;
+                    lastRsign = trackingData.maxCrossCorrelation.real() > 0 ? 1 : -1;
+                    lastIsign = trackingData.maxCrossCorrelation.imag() > 0 ? 1 : -1;
+
+
 
                 }
 

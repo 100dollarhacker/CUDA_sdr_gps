@@ -75,6 +75,8 @@ namespace ft
             fft_inplace(data.data(), data.size(), inverse);
     }
 
+
+
     // In-place iterative Cooley-Tukey FFT (n must be a power of two)
     inline void fft_inplace(std::complex<float> *data, std::size_t n, bool inverse = false)
     {
@@ -119,6 +121,13 @@ namespace ft
             for (std::size_t i = 0; i < n; ++i)
                 data[i] *= inv_n;
         }
+    }
+
+    // Inverse transform: complex -> complex (in-place)
+    inline void ifft_inplace(std::vector<std::complex<float>> &data)
+    {
+        if (!data.empty())
+            fft_inplace(data.data(), data.size(), true);
     }
 
     // Compute FFT from real float array to complex vector.

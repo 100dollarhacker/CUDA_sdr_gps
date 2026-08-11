@@ -285,7 +285,7 @@ gpsTrackingData freq_shift_correlateCUDALimited5(const std::vector<int>& goldCod
         {
 
 
-            gpu_freq_shift_correlate<<<(SAMPLES_PER_MS/256)+1, 256>>>(-((float)sampleNumber)/1000 * 2*PI *freqShiftHz, cuda_signalI1, cuda_signalQ1, cuda_goldCode,  freqShiftHz, lag, cuda_output);
+            gpu_freq_shift_correlate<<<(SAMPLES_PER_MS/256)+1, 256>>>(+((float)sampleNumber)/1000 * 2*PI *freqShiftHz, cuda_signalI1, cuda_signalQ1, cuda_goldCode,  freqShiftHz, lag, cuda_output);
             // gpu_freq_shift_correlate<<<(SAMPLES_PER_MS/256)+1, 256>>>(0, cuda_signalI1, cuda_signalQ1, cuda_goldCode,  freqShiftHz, lag, cuda_output);
 
             cudaError_t err = cudaGetLastError();
@@ -396,7 +396,7 @@ std::complex<float> freq_shift_correlateCUDA(const std::vector<int>& goldCode, f
     // lag = 1230;
     {
 
-        for (freqShiftHz = IF-5000; freqShiftHz <= IF + 5000; freqShiftHz += 250)
+        for (freqShiftHz = IF-5000; freqShiftHz <= IF + 5000; freqShiftHz += 150)
         // freqShiftHz = -250;//3250;
         {
 

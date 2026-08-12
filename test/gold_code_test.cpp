@@ -709,7 +709,8 @@ bool check_gps_32bit_parity(uint32_t data) {
     }
 }
 
-std::vector<std::complex<float>> run_fft_and_print_freq(std::vector<std::complex<float>> subinput)
+// std::vector<std::complex<float>> run_fft_and_print_freq(std::vector<std::complex<float>> subinput)
+float run_fft_and_print_freq(std::vector<std::complex<float>> subinput)
 {
 
     // std::vector<std::complex<float>> subinput;
@@ -717,7 +718,7 @@ std::vector<std::complex<float>> run_fft_and_print_freq(std::vector<std::complex
 
     float max_abs = 0.0f;
     int max_idx = 0;
-    for(int i =1 ; i < fft_res.size(); i++) {
+    for(int i =1 ; i < fft_res.size()/2; i++) {
         if (max_abs < abs(fft_res[i])) {
             max_abs = abs(fft_res[i]);
             max_idx = i;
@@ -726,27 +727,34 @@ std::vector<std::complex<float>> run_fft_and_print_freq(std::vector<std::complex
 
     printf("Max FFT index: %d  Max FFT abs: %.3f\n", max_idx, max_abs/1000000);
 
-    for(int i= 0 ; i < fft_res.size(); i++) {
-        printf("(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs(fft_res[i]) /1000000,fft_res[i].real()/1000, fft_res[i].imag()/1000);
-    }
+    // for(int i= 0 ; i < fft_res.size(); i++) {
+    //     printf("(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs(fft_res[i]) /1000000,fft_res[i].real()/1000, fft_res[i].imag()/1000);
+    // }
 
-    subinput.clear();
-    printf("After clearing subinput:\n");
-    for(int i= 0 ; i < fft_res.size(); i++) {
-        fft_res[i] = 0;
-        printf("(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs(fft_res[i]) /1000000,fft_res[i].real()/1000, fft_res[i].imag()/1000);
-    }
+    // subinput.clear();
+    // printf("After clearing subinput:\n");
+    // for(int i= 0 ; i < fft_res.size(); i++) {
+    //     fft_res[i] = 0;
+    //     printf("(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs(fft_res[i]) /1000000,fft_res[i].real()/1000, fft_res[i].imag()/1000);
+    // }
 
 
-    fft_res[max_idx/2] = max_abs;
-    ft::ifft_inplace(fft_res);
+    // fft_res[max_idx/2] = max_abs;
+    // ft::ifft_inplace(fft_res);
 
-    printf("After IFFT:\n");
-    for(int i =0 ; i < fft_res.size(); i++) {
-        printf("(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs(fft_res[i]) /1000000,fft_res[i].real()/1000, fft_res[i].imag()/1000);
-    }
+    float freq = 1000.0f * (max_idx/2) / fft_res.size();
+    printf("After IFFT: freq: %.3f Hz\n", freq);
 
-    return fft_res;
+    // for(int i =0 ; i < fft_res.size(); i++) {
+    //     // std::complex<float> val =  std::complex<float>(sin(2 * M_PI * freq * i / fft_res.size()), cos(2 * M_PI * freq * i / fft_res.size()));
+    //     std::complex<float> val =  std::complex<float>(sin( 2* M_PI* freq * i / fft_res.size()), cos(2* M_PI* freq * i / fft_res.size()));
+    //     printf("(%d)ABS:%.3f(%.3f) i=%.3f(%0.3f)  j=%.3f(%0.3f)\n", i,abs(fft_res[i]) /1000000,abs(val)
+    //                                                                 ,fft_res[i].real()/1000,val.real(),
+    //                                                                  fft_res[i].imag()/1000,val.imag());
+    // }
+
+    // return fft_res;
+    return freq;
 
 }
 
@@ -814,7 +822,7 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
 
         printf("Processing Sat #%d\n", i);
         // for (freqShiftHz = -5000; freqShiftHz <= 5000; freqShiftHz += 500) {
-        const int SAMPLES_DATA_SIZE = 256;
+        const int SAMPLES_DATA_SIZE = 512;
         vector<std::complex<float>> samples_data = vector<std::complex<float>>(SAMPLES_DATA_SIZE);
         int lagShift = 0;
         int freqShift = 0;
@@ -880,11 +888,16 @@ const int LOG_LOG = 1;
                     bitCount++;
 
                     if (samples % SAMPLES_DATA_SIZE == 0 && samples > 0) {
-                        auto fft_res = run_fft_and_print_freq(samples_data);
+                        auto freq = run_fft_and_print_freq(samples_data);
 
-                        for(int i= 0 ; i < fft_res.size(); i++) {
-                            std::complex<float> val = conj(fft_res[i]) *  samples_data[i];
-                            printf("VAL:(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs(val) /10000000,val.real()/10000, val.imag()/10000);
+                        for(int i= 0 ; i < samples_data.size(); i++) {
+                            // std::complex<float> val = conj(fft_res[i]) *  samples_data[i];
+                            std::complex<float> val =  std::complex<float>(sin( 2* M_PI* freq * i / samples_data.size()), cos(2* M_PI* freq * i / samples_data.size()));
+                            // val = (val) *  samples_data[i];
+                            // printf("VAL:(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs(val) /10000000,val.real()/10000, val.imag()/10000);
+                            printf("VAL:(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs(val) ,val.real(), val.imag());
+                            printf("VAL11111111111111111111111111111111111111111111111111111:(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs(samples_data[i]) ,samples_data[i].real(), samples_data[i].imag());
+                            printf("VAL2:(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs((val) *  samples_data[i])/10000000 ,((val) *  samples_data[i]).real()/10000, ((val) *  samples_data[i]).imag()/10000);
                         }
 
                     }

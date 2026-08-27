@@ -822,7 +822,7 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
 
         printf("Processing Sat #%d\n", i);
         // for (freqShiftHz = -5000; freqShiftHz <= 5000; freqShiftHz += 500) {
-        const int SAMPLES_DATA_SIZE = 512;
+        const int SAMPLES_DATA_SIZE = 1024;
         vector<std::complex<float>> samples_data = vector<std::complex<float>>(SAMPLES_DATA_SIZE);
         int lagShift = 0;
         int freqShift = 0;
@@ -890,17 +890,62 @@ const int LOG_LOG = 1;
                     if (samples % SAMPLES_DATA_SIZE == 0 && samples > 0) {
                         auto freq = run_fft_and_print_freq(samples_data);
 
+
+                        std::complex<float> sumA = 0 ;
+                        std::complex<float> sumB = 0 ;
+                        int count20 = 0 ;
+
+                        // std::complex<float> convWindow[7] = {1,1,1,0,-1,-1,-1};
+                        const int CONV_WINDOW_SIZE = 9;
+                        // std::complex<float> convWindow[CONV_WINDOW_SIZE] = {1,1,1,1,1,0,-1,-1,-1,-1,-1};
+                        // std::complex<float> convWindow[CONV_WINDOW_SIZE] = {1,1,1,0,-1,-1,-1};
+                        std::complex<float> convWindow[CONV_WINDOW_SIZE] = {1,1,1,1,0,-1,-1,-1,-1};
                         for(int i= 0 ; i < samples_data.size(); i++) {
                             // std::complex<float> val = conj(fft_res[i]) *  samples_data[i];
                             std::complex<float> val =  std::complex<float>(sin( 2* M_PI* freq * i / samples_data.size()), cos(2* M_PI* freq * i / samples_data.size()));
                             // val = (val) *  samples_data[i];
                             // printf("VAL:(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs(val) /10000000,val.real()/10000, val.imag()/10000);
-                            printf("VAL:(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs(val) ,val.real(), val.imag());
-                            printf("VAL11111111111111111111111111111111111111111111111111111:(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs(samples_data[i]) ,samples_data[i].real(), samples_data[i].imag());
-                            printf("VAL2:(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs((val) *  samples_data[i])/10000000 ,((val) *  samples_data[i]).real()/10000, ((val) *  samples_data[i]).imag()/10000);
+                            // printf("VAL:(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs(val) ,val.real(), val.imag());
+                            // printf("VAL11111111111111111111111111111111111111111111111111111:(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs(samples_data[i]) ,samples_data[i].real(), samples_data[i].imag());
+                            std::complex<float> mult = (val) *  samples_data[i];
+                            printf("VAL2:(%d)ABS:%.3f i=%.3f  j=%.3f\n", i,abs(mult)/10000000 ,mult.real()/10000, mult.imag()/10000);
+
+                            // calculate convolution with step window of size 7. [+1, +1, +1, 0, -1, -1, -1]
+                            std::complex<float> convSum =0;
+                            for (int j = 0 ; j < CONV_WINDOW_SIZE ; j++) {
+                                std::complex<float> val1 =  1;//std::complex<float>(sin( 2* M_PI* freq * (i+j) / samples_data.size()), cos(2* M_PI* freq * (i+j) / samples_data.size()));
+                                std::complex<float> mult1 = convWindow[j] *  samples_data[(i+j)%SAMPLES_DATA_SIZE];
+                                convSum += mult1;// * convWindow[j] ;
+
+                                // printf("MULT:(%d)ABS:%.3f i=%.3f  j=%.3f  D:%.3f %.3f\n", i,abs(mult1)/10000 ,mult1.real()/10000, mult1.imag()/10000,  samples_data[(i+j)%SAMPLES_DATA_SIZE].real()/10000, samples_data[(i+j)%SAMPLES_DATA_SIZE].imag()/10000);
+                                // printf("                                        SUM:(%d)  << %f>>  ABS:%.3f i=%.3f  j=%.3f\n", i, convSum.real()/10000* convSum.real()/10000 + convSum.imag()/10000*convSum.imag()/10000  ,abs(convSum)/10000 ,convSum.real()/10000, convSum.imag()/10000);
+
+                            }
+                            printf("                                                                             conv [%d] <<<%.1f>>>abs:%.3f r:%.3f,i:%.3f  \n", i, convSum.real()/10000* convSum.real()/10000 + convSum.imag()/10000*convSum.imag()/10000 , abs(convSum)/100000, convSum.real()/100000, convSum.imag()/100000);
+
+                            if (count20 < 10) {
+                                sumA += std::complex<float>(mult.real()/10000, mult.imag()/10000);
+                            } else {
+                                sumB += std::complex<float>(mult.real()/10000, mult.imag()/10000);
+                            }
+
+                            if (i % 20 == 0 ) {
+                                count20 = 0;
+
+                                printf("VAL3 A::r:%.3f,i:%.3f  B::r:%.3f,i:%.3f\n", sumA.real(), sumA.imag(), sumB.real(), sumB.imag());
+                                sumA = std::complex<float>(0,0);
+                                sumB = std::complex<float>(0,0);
+                            }
+
+                            count20++;
                         }
 
+                        if (samples > 0) exit(10);
+
+
                     }
+
+
 
                     if (bitCount % 300 == 0) {
                         printf("|||");

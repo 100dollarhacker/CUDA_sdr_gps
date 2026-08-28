@@ -834,6 +834,8 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
         float freq = 0;
         float samples_avg = 0;
         uint32_t preamble = 0 ;
+        int max_index = 0;
+        float max_index_value = 0;
         //     for (lag = 0 ; lag < CHIPS_PER_MS ; lag+=3) {
             for (int samples = 0 ; samples < 60000; samples++) {
                 if (reader.readSamples(CHIPS_PER_MS, iq_samples) == 0) // Read 10 ms of IQ samples
@@ -926,16 +928,41 @@ const int LOG_LOG = 1;
                                 // printf("                                        SUM:(%d)  << %f>>  ABS:%.3f i=%.3f  j=%.3f\n", i, convSum.real()/10000* convSum.real()/10000 + convSum.imag()/10000*convSum.imag()/10000  ,abs(convSum)/10000 ,convSum.real()/10000, convSum.imag()/10000);
 
                             }
-                            printf("                                                                             conv [%d] <<<%.1f>>>   AVG:%f abs:%.3f r:%.3f,i:%.3f  \n", i, convSum.real()/10000* convSum.real()/10000 + convSum.imag()/10000*convSum.imag()/10000 ,
+
+                            float convSumValue = convSum.real()/10000* convSum.real()/10000 + convSum.imag()/10000*convSum.imag()/10000;
+                            printf("                                                                             conv [%d] <<<%.1f>>>   AVG:%f abs:%.3f r:%.3f,i:%.3f  \n", i, convSumValue,
                                                                                             samples_avg, abs(convSum)/100000 , convSum.real()/100000, convSum.imag()/100000);
-                            samples_avg = (convSum.real()/10000* convSum.real()/10000 + convSum.imag()/10000*convSum.imag()/10000) /20  + samples_avg*19/20 ;
+
+
+
+                            samples_avg = (convSumValue) /20  + samples_avg*19/20 ;
+
+
+                            //max_index_value
+                            if (convSumValue > samples_avg * 2) {
+                                if (convSumValue > max_index_value) {
+                                    max_index_value = convSumValue;
+                                    max_index = i;
+
+                                    printf("Found peak at index %d (mod20 : %d)  convSum:%.3f  AVG:%.3f\n", max_index, max_index % 20, convSumValue, samples_avg);
+
+                                }
+
+                            }
+
+
+                            if ((i % 20 )==(max_index % 20)) {
+                                if (convSumValue > samples_avg * 2) {
+                                    printf("Bit change detected at index %d (mod20 : %d)  convSum:%.3f  AVG:%.3f\n", i, max_index % 20, convSumValue, samples_avg);
+                                }
+                            }
                             // if (count20 < 10) {
                             //     sumA += std::complex<float>(mult.real()/10000, mult.imag()/10000);
                             // } else {
                             //     sumB += std::complex<float>(mult.real()/10000, mult.imag()/10000);
                             // }
 
-                            // if (i % 20 == 0 ) {
+                            // if (i % 20 == 0 ) {max_index_value
                             //     count20 = 0;
 
                             //     printf("VAL3 A::r:%.3f,i:%.3f  B::r:%.3f,i:%.3f\n", sumA.real(), sumA.imag(), sumB.real(), sumB.imag());
@@ -945,6 +972,8 @@ const int LOG_LOG = 1;
 
                             // count20++;
                         }
+
+                        printf("Max index value at loation : %d\n", max_index %20);
 
                         if (samples > SAMPLES_DATA_SIZE) exit(10);
 

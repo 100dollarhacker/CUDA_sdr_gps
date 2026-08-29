@@ -823,7 +823,10 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
         printf("Processing Sat #%d\n", i);
         // for (freqShiftHz = -5000; freqShiftHz <= 5000; freqShiftHz += 500) {
         const int SAMPLES_DATA_SIZE = 1024;
+        const int CONV_WINDOW_SIZE = 9;
+
         vector<std::complex<float>> samples_data = vector<std::complex<float>>(SAMPLES_DATA_SIZE);
+        vector<std::complex<float>> samples_dataB = vector<std::complex<float>>(CONV_WINDOW_SIZE);
         int lagShift = 0;
         int freqShift = 0;
         int prevIsign = 1, lastIsign = 1 ;
@@ -836,6 +839,10 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
         uint32_t preamble = 0 ;
         int max_index = 0;
         float max_index_value = 0;
+        std::complex<float> convWindow[CONV_WINDOW_SIZE] = {1,1,1,1,0,-1,-1,-1,-1};
+
+
+        bool first_init_flag = true;
         //     for (lag = 0 ; lag < CHIPS_PER_MS ; lag+=3) {
             for (int samples = 0 ; samples < 60000; samples++) {
                 if (reader.readSamples(CHIPS_PER_MS, iq_samples) == 0) // Read 10 ms of IQ samples
@@ -886,12 +893,51 @@ const int LOG_LOG = 1;
                     lagShift = 0;
                 }
 
-                samples_data[samples % SAMPLES_DATA_SIZE] = trackingData.maxCrossCorrelation;
+                if (first_init_flag) {
+                    samples_data[samples % SAMPLES_DATA_SIZE] = trackingData.maxCrossCorrelation;
+                } else {
+                    std::complex<float> val =  std::complex<float>(sin( 2* M_PI* freq * samples / samples_data.size()), cos(2* M_PI* freq * samples / samples_data.size()));
+                    samples_dataB[samples % CONV_WINDOW_SIZE] = val *  trackingData.maxCrossCorrelation;
+                }
+
+
+                if (!first_init_flag) {
+
+                        std::complex<float> convSum =0;
+                        for (int j = 0 ; j < CONV_WINDOW_SIZE ; j++) {
+                            std::complex<float> mult1 = convWindow[j] *  samples_dataB[(samples+j)%CONV_WINDOW_SIZE];
+                            convSum += mult1;// * convWindow[j] ;
+
+                           // printf("MULT:(%d)ABS:%.3f i=%.3f  j=%.3f  D:%.3f %.3f\n", samples,abs(mult1)/10000 ,mult1.real()/10000, mult1.imag()/10000,  samples_data[(samples+j)%SAMPLES_DATA_SIZE].real()/10000, samples_data[(samples+j)%SAMPLES_DATA_SIZE].imag()/10000);
+                           // printf("                                        SUM:(%d)  << %.2f>> AVG:%.2f ABS:%.3f i=%.3f  j=%.3f\n", samples, convSum.real()/10000* convSum.real()/10000 + convSum.imag()/10000*convSum.imag()/10000
+                             //                                                              ,samples_avg,abs(convSum)/10000 ,convSum.real()/10000, convSum.imag()/10000);
+
+                        }
+                        float convSumValue = convSum.real()/10000* convSum.real()/10000 + convSum.imag()/10000*convSum.imag()/10000;
+                        samples_avg = (convSumValue) /20  + samples_avg*19/20 ;
+
+                        if (convSumValue > samples_avg * 2) {
+                            if (convSumValue > max_index_value) {
+                                max_index = samples;
+                                max_index_value = convSumValue;
+                                printf("Found peak at index %d (mod20 : %d)  convSum:%.3f  AVG:%.3f\n", max_index, max_index % 20, convSumValue, samples_avg);
+                            } else if (samples % 20 == max_index % 20) {
+                                printf("Peak detected at index %d (mod20 : %d)  convSum:%.3f  AVG:%.3f\n", samples, max_index % 20, convSumValue, samples_avg);
+
+                            }
+
+
+
+                        }
+                }
+
                 if (samples % 20 == 0 ) {
 
                     bitCount++;
 
-                    if (samples % SAMPLES_DATA_SIZE == 0 && samples > 0) {
+
+
+                    if (samples % SAMPLES_DATA_SIZE == 0 && samples > 0 && first_init_flag) {
                         if (freq == 0) {
                             freq = run_fft_and_print_freq(samples_data);
                         }
@@ -903,10 +949,8 @@ const int LOG_LOG = 1;
                         int count20 = 0 ;
 
                         // std::complex<float> convWindow[7] = {1,1,1,0,-1,-1,-1};
-                        const int CONV_WINDOW_SIZE = 9;
                         // std::complex<float> convWindow[CONV_WINDOW_SIZE] = {1,1,1,1,1,0,-1,-1,-1,-1,-1};
                         // std::complex<float> convWindow[CONV_WINDOW_SIZE] = {1,1,1,0,-1,-1,-1};
-                        std::complex<float> convWindow[CONV_WINDOW_SIZE] = {1,1,1,1,0,-1,-1,-1,-1};
                         for(int i= 0 ; i < samples_data.size(); i++) {
                             // std::complex<float> val = conj(fft_res[i]) *  samples_data[i];
                             std::complex<float> val =  std::complex<float>(sin( 2* M_PI* freq * i / samples_data.size()), cos(2* M_PI* freq * i / samples_data.size()));
@@ -921,7 +965,7 @@ const int LOG_LOG = 1;
                             std::complex<float> convSum =0;
                             for (int j = 0 ; j < CONV_WINDOW_SIZE ; j++) {
                                 std::complex<float> val1 =  1;//std::complex<float>(sin( 2* M_PI* freq * (i+j) / samples_data.size()), cos(2* M_PI* freq * (i+j) / samples_data.size()));
-                                std::complex<float> mult1 = convWindow[j] *  samples_data[(i+j)%SAMPLES_DATA_SIZE];
+                                std::complex<float> mult1 = convWindow[j] *  samples_data[(i+j)%SAMPLES_DATA_SIZE] * (-conj(val));
                                 convSum += mult1;// * convWindow[j] ;
 
                                 // printf("MULT:(%d)ABS:%.3f i=%.3f  j=%.3f  D:%.3f %.3f\n", i,abs(mult1)/10000 ,mult1.real()/10000, mult1.imag()/10000,  samples_data[(i+j)%SAMPLES_DATA_SIZE].real()/10000, samples_data[(i+j)%SAMPLES_DATA_SIZE].imag()/10000);
@@ -975,8 +1019,11 @@ const int LOG_LOG = 1;
 
                         printf("Max index value at loation : %d\n", max_index %20);
 
-                        if (samples > SAMPLES_DATA_SIZE) exit(10);
-
+                        if (samples > SAMPLES_DATA_SIZE){
+                             //exit(1) ;
+                            first_init_flag = false;
+                            max_index_value = 0;// TODO:: This is bad, should be fixed!
+                        }
 
                     }
 

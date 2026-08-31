@@ -765,7 +765,8 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
     GPS_IQ_reader reader;
     reader.open(FILE_PATH_GPS_IQ_SAMPLE1);
     reader.seekSample(45000);
-    int data_bits[300];
+    const int BITS_SIZE = 6000;
+    int data_bits[BITS_SIZE];
 
     std::vector<std::complex<float>> iq_samples;
     reader.readSamples(CHIPS_PER_MS, iq_samples); // Read 10 ms of IQ samples
@@ -835,7 +836,9 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
         int wasSignChange = 0;
         int bitCount = 0;
         float freq = 0;
-        float samples_avg = 0;
+        float samples_avgH = 0;
+        float samples_avgL = 0;
+        float samples_avg = 0; // TODO: Remove this variable.
         uint32_t preamble = 0 ;
         int max_index = 0;
         float max_index_value = 0;
@@ -898,6 +901,7 @@ const int LOG_LOG = 1;
                 } else {
                     std::complex<float> val =  std::complex<float>(sin( 2* M_PI* freq * samples / samples_data.size()), cos(2* M_PI* freq * samples / samples_data.size()));
                     samples_dataB[samples % CONV_WINDOW_SIZE] = val *  trackingData.maxCrossCorrelation;
+                    printf("RAW DATA: (%d)ABS:%.3f i=%.3f  j=%.3f\n", samples,abs(samples_dataB[samples % CONV_WINDOW_SIZE]) /10000000,samples_dataB[samples % CONV_WINDOW_SIZE].real()/10000, samples_dataB[samples % CONV_WINDOW_SIZE].imag()/10000);
                 }
 
 
@@ -914,20 +918,28 @@ const int LOG_LOG = 1;
 
                         }
                         float convSumValue = convSum.real()/10000* convSum.real()/10000 + convSum.imag()/10000*convSum.imag()/10000;
-                        samples_avg = (convSumValue) /20  + samples_avg*19/20 ;
+                        samples_avg = (samples_avgH + samples_avgL)/2;
 
-                        if (convSumValue > samples_avg * 2) {
+                        if (convSumValue > samples_avg ) {
                             if (convSumValue > max_index_value) {
                                 max_index = samples;
                                 max_index_value = convSumValue;
                                 printf("Found peak at index %d (mod20 : %d)  convSum:%.3f  AVG:%.3f\n", max_index, max_index % 20, convSumValue, samples_avg);
                             } else if (samples % 20 == max_index % 20) {
-                                printf("Peak detected at index %d (mod20 : %d)  convSum:%.3f  AVG:%.3f\n", samples, max_index % 20, convSumValue, samples_avg);
-
+                                printf("Peak  detected at index %d (mod20 : %d)  convSum:%.3f  AVG:%.3f\n", samples, max_index % 20, convSumValue, samples_avg);
                             }
 
+                            samples_avgH = (convSumValue) /20  + samples_avgH*19/20 ;
 
 
+                            wasSignChange =1;
+                        } else {
+                            if (samples % 20 == max_index % 20) {
+                                printf("NO Peak  at index %d (mod20 : %d)  convSum:%.3f  AVG:%.3f\n", samples, max_index % 20, convSumValue, samples_avg);                            wasSignChange =0;
+                                wasSignChange =0;
+                                samples_avgL = (convSumValue) /20  + samples_avgL*19/20 ;
+
+                            }
                         }
                 }
 
@@ -998,6 +1010,7 @@ const int LOG_LOG = 1;
                             if ((i % 20 )==(max_index % 20)) {
                                 if (convSumValue > samples_avg * 2) {
                                     printf("Bit change detected at index %d (mod20 : %d)  convSum:%.3f  AVG:%.3f\n", i, max_index % 20, convSumValue, samples_avg);
+
                                 }
                             }
                             // if (count20 < 10) {
@@ -1033,13 +1046,16 @@ const int LOG_LOG = 1;
                         printf("|||");
                     } else if (bitCount %30 == 0) {
                         printf("|");
+                    } else if (bitCount % 5 == 0) {
+                        printf(".");
                     }
 
                     if (wasSignChange) {
                         bit ^= 1;
+                        wasSignChange = 0;
                     }
 
-                    data_bits[bitCount % 300] = bit;
+                    data_bits[bitCount % BITS_SIZE] = bit;
 
 
                     // printf("%d", bit);
@@ -1052,9 +1068,11 @@ const int LOG_LOG = 1;
 
                         printf("\nFound preamble at sample %d\n ----", samples);
                         for (int i = 0; i < 300; i++) {
-                            printf("%d", data_bits[(bitCount-i)%300]);
+                            printf("%d", data_bits[(bitCount-i)%BITS_SIZE]);
                             if (i  % 30 == 29) {
                                 printf("-");
+                            } else if ( (i  % 5) == 4 && i > 30 && i < 45) {
+                                printf(".");
                             }
                         }
                         printf("---\n");
@@ -1071,30 +1089,30 @@ const int LOG_LOG = 1;
                         }
                     }
 
-                    wasSignChange = 0;
+                    // wasSignChange = 0;
                 }
 
                 // if (samples % 2 == 0 )
-                {
-                    int signChange =   prevRsign * trackingData.maxCrossCorrelation.real() < 0 &&  prevIsign * trackingData.maxCrossCorrelation.imag() < 0 ? 1 : 0;
-                    if (signChange) {
-                        wasSignChange  = 1;
-                    }
-                    if (LOG_LOG) printf("Sat #%d signChange:%d freqShiftHz:%f Lag:%d Cross:%d R:%f I:%f Rsign:%d Isign:%d\n", i, signChange, trackingData.freqShiftHz, trackingData.lag,
-                        (int)std::abs(trackingData.maxCrossCorrelation), trackingData.maxCrossCorrelation.real(), trackingData.maxCrossCorrelation.imag(),
-                          prevRsign * trackingData.maxCrossCorrelation.real() > 0 ? 1 : -1, prevIsign * trackingData.maxCrossCorrelation.imag() > 0 ? 1 : -1
-                        );
+                // {
+                //     int signChange =   prevRsign * trackingData.maxCrossCorrelation.real() < 0 &&  prevIsign * trackingData.maxCrossCorrelation.imag() < 0 ? 1 : 0;
+                //     if (signChange) {
+                //         wasSignChange  = 1;
+                //     }
+                //     if (LOG_LOG) printf("Sat #%d signChange:%d freqShiftHz:%f Lag:%d Cross:%d R:%f I:%f Rsign:%d Isign:%d\n", i, signChange, trackingData.freqShiftHz, trackingData.lag,
+                //         (int)std::abs(trackingData.maxCrossCorrelation), trackingData.maxCrossCorrelation.real(), trackingData.maxCrossCorrelation.imag(),
+                //           prevRsign * trackingData.maxCrossCorrelation.real() > 0 ? 1 : -1, prevIsign * trackingData.maxCrossCorrelation.imag() > 0 ? 1 : -1
+                //         );
 
 
-                    prevRsign = lastRsign;
-                    prevIsign = lastIsign;
+                //     prevRsign = lastRsign;
+                //     prevIsign = lastIsign;
 
-                    lastRsign = trackingData.maxCrossCorrelation.real() > 0 ? 1 : -1;
-                    lastIsign = trackingData.maxCrossCorrelation.imag() > 0 ? 1 : -1;
+                //     lastRsign = trackingData.maxCrossCorrelation.real() > 0 ? 1 : -1;
+                //     lastIsign = trackingData.maxCrossCorrelation.imag() > 0 ? 1 : -1;
 
 
 
-                }
+                // }
 
                 // auto cross_cuda = (int)abs(cross_cuda_complex);
                 // if (cross_cuda > max_cross) {

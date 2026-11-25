@@ -154,7 +154,7 @@ std::complex<float> freq_shift_correlateLimitedSearchCUDA(const std::vector<int>
         // for (freqShiftHz = -5000; freqShiftHz <= 5000; freqShiftHz += 250)
         // freqShiftHz = -3500;//3250;
         {
-            float phase = 2 * M_PI * 1/1000 * freqShiftHz * bench;
+            float phase = 0;//2 * M_PI * 1/1000 * freqShiftHz * bench;
 
             gpu_freq_shift_correlate<<<(SAMPLES_PER_MS/256)+1, 256>>>(phase,cuda_signalI1, cuda_signalQ1, cuda_goldCode,  freqShiftHz, lag, cuda_output);
 
@@ -205,8 +205,8 @@ std::complex<float> freq_shift_correlateLimitedSearchCUDA(const std::vector<int>
     if (bit_count % 20 == 0) {
         printf("|");
     }
-    printf("%c", (priv_bit == 0) ? '.' : '_');
-    printf("max_real:%f max_img:%f max cross:%f max freq:%f max lag:%d chips:%d sign_changed:%d\n",max_sum.real(), max_sum.imag(), max_cross, max_freq, max_lag, max_lag/SAMPLES_PER_CHIP, sign_changed );
+    // printf("%c", (priv_bit == 0) ? '.' : '_');
+    // printf("max_real:%f max_img:%f max cross:%f max freq:%f max lag:%d chips:%d sign_changed:%d\n",max_sum.real(), max_sum.imag(), max_cross, max_freq, max_lag, max_lag/SAMPLES_PER_CHIP, sign_changed );
 
 
     cudaFree(cuda_output);
@@ -275,17 +275,24 @@ gpsTrackingData freq_shift_correlateCUDALimited5(const std::vector<int>& goldCod
     float max_freq = 0 ;
     int max_lag = 0 ;
     std::complex<float> max_sum = std::complex<float>(0.0f, 0.0f);
-    float IF = 0;//10.23e6; // 1.023 MHz * 10
+    float IF = freqShiftHz;//10.23e6; // 1.023 MHz * 10
+    static float phase = 0.0f;
+    phase += 0.001 * 2*PI *IF;
+    if (abs(sin(phase)) < 0.001 && abs(phase)> 1000) {
+        phase = 0 ;
+    }
+
+
     for (int lag = lagCenter - 6; lag < lagCenter + 6; lag += 3)
     // lag = 1230;
     {
 
-        for (IF = freqShiftHz-500; IF <= freqShiftHz + 250; IF += 500)
+        // for (IF = freqShiftHz-500; IF <= freqShiftHz + 250; IF += 500)
         // freqShiftHz = -250;//3250;
         {
+            // printf("PhaseII %f Lag:%d IF:%.2f\n", phase, lag, IF);
 
-
-            gpu_freq_shift_correlate<<<(SAMPLES_PER_MS/256)+1, 256>>>(+((float)sampleNumber)/1000 * 2*PI *freqShiftHz, cuda_signalI1, cuda_signalQ1, cuda_goldCode,  freqShiftHz, lag, cuda_output);
+            gpu_freq_shift_correlate<<<(SAMPLES_PER_MS/256)+1, 256>>>(phase, cuda_signalI1, cuda_signalQ1, cuda_goldCode,  freqShiftHz, lag, cuda_output);
             // gpu_freq_shift_correlate<<<(SAMPLES_PER_MS/256)+1, 256>>>(0, cuda_signalI1, cuda_signalQ1, cuda_goldCode,  freqShiftHz, lag, cuda_output);
 
             cudaError_t err = cudaGetLastError();
@@ -307,13 +314,18 @@ gpsTrackingData freq_shift_correlateCUDALimited5(const std::vector<int>& goldCod
             for (size_t i = 0; i < BLOCK_SIZE; i++) {
                 sum += std::complex<float>(output[2*i], output[2*i+1]);
             }
+
+            if (lag==lagCenter) {
+                max_sum = sum;
+            }
+
             float realSum = std::abs(sum);
 
             if (realSum > max_cross) {
                 max_cross = realSum;
                 max_freq = freqShiftHz;
                 max_lag = lag;
-                max_sum = sum;
+                // max_sum = sum;
                 // printf( "Sat #%d freqShiftHz:%f Lag:%d Cross:%d\n", i, freqShiftHz, lag, cross_cuda);
             }
             // printf( "Lag: %d  FreqShiftHz:%f Cross:(%f,%f)\n", lag, freqShiftHz, sum.imag(), sum.real());
@@ -321,7 +333,8 @@ gpsTrackingData freq_shift_correlateCUDALimited5(const std::vector<int>& goldCod
         }
         // printf("\n");/
     }
-    // printf("max cross:%f max freq:%f max lag:%d chips:%d\n", max_cross, max_freq, max_lag, max_lag/SAMPLES_PER_CHIP);
+
+    printf("R:%.3f I:%.3f max cross:%f max freq:%f max lag:%d/lagCenter:%d chips:%d\n", max_sum.real()/1000, max_sum.imag()/1000 ,  max_cross/1000, max_freq, max_lag, lagCenter, max_lag/SAMPLES_PER_CHIP);
     cudaFree(cuda_output);
     cudaFree(cuda_signalI1);
     cudaFree(cuda_signalQ1);
@@ -435,7 +448,7 @@ std::complex<float> freq_shift_correlateCUDA(const std::vector<int>& goldCode, f
         }
         // printf("\n");/
     }
-    printf("max cross:%f max freq:%f max lag:%d chips:%d\n", max_cross, max_freq, max_lag, max_lag/SAMPLES_PER_CHIP);
+    printf("max cross:%f max freq:%f max lag:%d chips:%d\n", max_cross/1000, max_freq, max_lag, max_lag/SAMPLES_PER_CHIP);
     cudaFree(cuda_output);
     cudaFree(cuda_signalI1);
     cudaFree(cuda_signalQ1);

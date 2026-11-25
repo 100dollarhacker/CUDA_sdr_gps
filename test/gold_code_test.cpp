@@ -30,8 +30,8 @@ const int CHIPS_PER_MS = 25000;
 // const char* FILE_PATH_GPS_IQ_SAMPLE1 =  "../../test_data/data_p1_a1_l24_g30_b28_s10p23.raw";
 
 // File downloaded from https://etsin.fairdata.fi/dataset/63f8b776-680b-4c98-ace7-d5e443f2b1c5/data
-const char* FILE_PATH_GPS_IQ_SAMPLE1 =  "../../test_data/skydel_L1_real_gps.raw"; // Working!
-// const char* FILE_PATH_GPS_IQ_SAMPLE1 =  "../../test_data/gps_sim_data_25MBPS.raw"; // ???
+const char* FILE_PATH_GPS_IQ_SAMPLE1 =  "../../test_data/skydel_L1_real_gps.raw"; // Working! Sat:28 f:850 max:lag 8232, Sat:27, f:-1550, lag: 20682
+// const char* FILE_PATH_GPS_IQ_SAMPLE1 =  "../../test_data/gps_sim_data_25MBPS.raw"; // Sat: 14 f:-650 max lag:18624 chips:744, Sat: 23 freq:1450 max lag:10476 chips:419
 
 // const char*     FILE_PATH_GPS_IQ_SAMPLE1 = "../../test_data/data_clean_575MHz_Sine_10MHZSampling_Band5MHZ.raw";// No Signal how it possible ;)
 // const char*     FILE_PATH_GPS_IQ_SAMPLE1 = "../../test_data/data_clean_949MHz_Sine_10MHZSampling_Band5MHZ.raw";// No Signal how it possible ;)
@@ -558,9 +558,9 @@ TEST(CudaGoldCodeTest, findOneSateCUDA)
 
     printf("Running on file :%s\n", FILE_PATH_GPS_IQ_SAMPLE1);
 
-    // for (int i  = 0; i < 32; i++)
+    for (int i  = 0; i < 32; i++)
     // for (int i = 10; i < 14; i++)
-    int i =12;
+    // int i =12;
     {
 
         // int i = 4; // test for satelite 1
@@ -572,7 +572,7 @@ TEST(CudaGoldCodeTest, findOneSateCUDA)
         // for (freqShiftHz = -5000; freqShiftHz <= 5000; freqShiftHz += 500) {
 
         //     for (lag = 0 ; lag < CHIPS_PER_MS ; lag+=3) {
-            for (int samples = 0 ; samples < 100; samples++) {
+            for (int samples = 0 ; samples < 3; samples++) {
                 reader.readSamples(CHIPS_PER_MS, iq_samples); // Read 10 ms of IQ samples
 
                 // skip 100 ms
@@ -813,13 +813,13 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
 
     //for (int i = 0; i < 32; i++)
     // for (int i = 10; i < 14; i++)
-    int i = 24;//24;//23;//28;//24;
+    int i = 28;//24;//23;//28;//24;
     {
 
         // int i = 4; // test for satelite 1
         ca.get_gold_code_sequence(i, goldCode);
-        float freqShiftHz = -2500;//-2500;//1500;//1000;//-2500;
-        int lag = 21036;//21036;//10305;//8109;//21036;
+        float freqShiftHz = 850;//-2500;//1500;//1000;//-2500;
+        int lag = 8232;//21036;//10305;//8109;//21036;
 
         printf("Processing Sat #%d\n", i);
         // for (freqShiftHz = -5000; freqShiftHz <= 5000; freqShiftHz += 500) {
@@ -851,21 +851,21 @@ TEST(CudaGoldCodeTest, findOneSateCUDALimited5)
                 if (reader.readSamples(CHIPS_PER_MS, iq_samples) == 0) // Read 10 ms of IQ samples
                     break;
 
-                 // go over the entire signal and add average to remove HackRF DC spike
-                static float avgI = 0.0f;
-                static float avgQ = 0.0f;
+                //  // go over the entire signal and add average to remove HackRF DC spike
+                // static float avgI = 0.0f;
+                // static float avgQ = 0.0f;
 
-                for (size_t idx = 0; idx < iq_samples.size(); idx++) {
-                    avgI += iq_samples[idx].real();
-                    avgQ += iq_samples[idx].imag();
-                }
+                // for (size_t idx = 0; idx < iq_samples.size(); idx++) {
+                //     avgI += iq_samples[idx].real();
+                //     avgQ += iq_samples[idx].imag();
+                // }
 
-                avgI /= iq_samples.size();
-                avgQ /= iq_samples.size();
+                // avgI /= iq_samples.size();
+                // avgQ /= iq_samples.size();
 
-                for (size_t idx = 0; idx < iq_samples.size(); idx++) {
-                    iq_samples[idx] -= std::complex<float>(avgI, avgQ);
-                }
+                // for (size_t idx = 0; idx < iq_samples.size(); idx++) {
+                //     iq_samples[idx] -= std::complex<float>(avgI, avgQ);
+                // }
 
                 gpsTrackingData trackingData = freq_shift_correlateCUDALimited5(goldCode, freqShiftHz , iq_samples,  lag, samples) ;
                 iq_samples.clear();
@@ -901,7 +901,7 @@ const int LOG_LOG = 1;
                 } else {
                     std::complex<float> val =  std::complex<float>(sin( 2* M_PI* freq * samples / samples_data.size()), cos(2* M_PI* freq * samples / samples_data.size()));
                     samples_dataB[samples % CONV_WINDOW_SIZE] = val *  trackingData.maxCrossCorrelation;
-                    printf("RAW DATA: (%d)ABS:%.3f i=%.3f  j=%.3f\n", samples,abs(samples_dataB[samples % CONV_WINDOW_SIZE]) /10000000,samples_dataB[samples % CONV_WINDOW_SIZE].real()/10000, samples_dataB[samples % CONV_WINDOW_SIZE].imag()/10000);
+                    //printf("RAW DATA (%d): ABS:%.3f i=%.3f  j=%.3f   WITH_FREQ:ABS:%.3f i=%.3f  j=%.3f\n", samples,abs(trackingData.maxCrossCorrelation)/10000000, trackingData.maxCrossCorrelation.real()/10000,trackingData.maxCrossCorrelation.imag()/10000,  abs(samples_dataB[samples % CONV_WINDOW_SIZE]) /10000000,samples_dataB[samples % CONV_WINDOW_SIZE].real()/10000, samples_dataB[samples % CONV_WINDOW_SIZE].imag()/10000);
                 }
 
 
@@ -924,9 +924,9 @@ const int LOG_LOG = 1;
                             if (convSumValue > max_index_value) {
                                 max_index = samples;
                                 max_index_value = convSumValue;
-                                printf("Found peak at index %d (mod20 : %d)  convSum:%.3f  AVG:%.3f\n", max_index, max_index % 20, convSumValue, samples_avg);
+                                printf("Found a new peak at index %d (mod20 : %d)  convSum:%.3f  AVG:%.3f\n", max_index, max_index % 20, convSumValue, samples_avg);
                             } else if (samples % 20 == max_index % 20) {
-                                printf("Peak  detected at index %d (mod20 : %d)  convSum:%.3f  AVG:%.3f\n", samples, max_index % 20, convSumValue, samples_avg);
+                                printf("Peak detected at index %d (mod20 : %d)  convSum:%.3f  AVG:%.3f\n", samples, max_index % 20, convSumValue, samples_avg);
                             }
 
                             samples_avgH = (convSumValue) /20  + samples_avgH*19/20 ;
@@ -1067,7 +1067,7 @@ const int LOG_LOG = 1;
                     if ((preamble & 0b11111111) == 0b00101110 || (preamble & 0b11111111) == 0b11010001) {
 
                         printf("\nFound preamble at sample %d\n ----", samples);
-                        for (int i = 0; i < 300; i++) {
+                        for (int i = 0; i < 60; i++) {
                             printf("%d", data_bits[(bitCount-i)%BITS_SIZE]);
                             if (i  % 30 == 29) {
                                 printf("-");
@@ -1078,16 +1078,16 @@ const int LOG_LOG = 1;
                         printf("---\n");
 
                     }
-                    if ((preamble & 0b11111111) == 0b00101110 || (preamble & 0b11111111) == 0b11010001) {
-                        printf("\nFound reversed data: %X  preamble at  bitCount %d  sample %d \n",preamble, bitCount, samples);
+                    // if ((preamble & 0b11111111) == 0b00101110 || (preamble & 0b11111111) == 0b11010001) {
+                    //     printf("\nFound reversed data: %X  preamble at  bitCount %d  sample %d \n",preamble, bitCount, samples);
 
-                        if (check_gps_32bit_parity(preamble) || check_gps_32bit_parity(~preamble)) {
-                            printf("Parity Check: PASSED\n");
-                        // printf("Recovered Data: 0x%06X\n", recovered_data);
-                        } else {
-                            printf("Parity Check: FAILED\n");
-                        }
-                    }
+                    //     if (check_gps_32bit_parity(preamble) || check_gps_32bit_parity(~preamble)) {
+                    //         printf("Parity Check: PASSED\n");
+                    //     // printf("Recovered Data: 0x%06X\n", recovered_data);
+                    //     } else {
+                    //         printf("Parity Check: FAILED\n");
+                    //     }
+                    // }
 
                     // wasSignChange = 0;
                 }

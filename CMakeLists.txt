@@ -3,10 +3,11 @@ enable_testing()
 
 
 
-project(MyProjectTest LANGUAGES CXX CUDA)
+#project(MyProjectTest LANGUAGES CXX CUDA)
+project(MyProjectTest LANGUAGES CXX )
 
-set(CMAKE_CUDA_STANDARD 14)
-set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+#set(CMAKE_CUDA_STANDARD 14)
+#set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 include(FetchContent)
 FetchContent_Declare(
